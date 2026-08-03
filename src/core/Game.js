@@ -1,5 +1,7 @@
 import PhysicsWorld from "../physics/PhysicsWorld";
 import Flag from "../entities/Flag";
+import ArenaPhysics from "../physics/ArenaPhysics";
+import ArenaRenderer from "../render/ArenaRenderer";
 
 export default class Game {
 
@@ -10,6 +12,9 @@ export default class Game {
 
         this.physics = null;
         this.flag = null;
+
+        this.arena = null;
+        this.arenaRenderer = new ArenaRenderer();
 
     }
 
@@ -25,6 +30,13 @@ export default class Game {
             width / 2,
             height / 2
         );
+
+        this.arena = new ArenaPhysics(
+          this.physics.world,
+          width / 2,
+          height / 2,
+          250
+      );
 
     }
 
@@ -48,6 +60,13 @@ export default class Game {
         );
 
         this.flag.draw(ctx);
+
+        this.arenaRenderer.draw(
+          this.ctx,
+          this.arena
+      );
+      
+      this.flag.draw(this.ctx);
 
     }
 

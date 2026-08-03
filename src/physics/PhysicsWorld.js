@@ -17,7 +17,7 @@ export default class PhysicsWorld {
 
     update() {
 
-        Matter.Engine.update(this.engine);
+        Matter.Engine.update(this.engine, 1000/60);
 
     }
 

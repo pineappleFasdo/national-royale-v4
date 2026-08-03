@@ -17,6 +17,10 @@ export default class Flag {
         );
 
         Matter.World.add(world, this.body);
+        Matter.Body.setVelocity(this.body, {
+            x: 5,
+            y: -3
+        });
 
     }
 
