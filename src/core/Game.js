@@ -1,28 +1,64 @@
+import PhysicsWorld from "../physics/PhysicsWorld";
+import Flag from "../entities/Flag";
+
 export default class Game {
+
     constructor(canvas) {
-      this.canvas = canvas;
-      this.ctx = canvas.getContext("2d");
+
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+
+        this.physics = null;
+        this.flag = null;
+
     }
-  
+
     resize(width, height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
+
+        this.canvas.width = width;
+        this.canvas.height = height;
+
+        this.physics = new PhysicsWorld(width, height);
+
+        this.flag = new Flag(
+            this.physics.world,
+            width / 2,
+            height / 2
+        );
+
     }
-  
-    update() {}
-  
+
+    update() {
+
+        this.physics.update();
+
+    }
+
     draw() {
-      this.ctx.fillStyle = "red";
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-  
-      this.ctx.fillStyle = "white";
-      this.ctx.font = "40px Arial";
-      this.ctx.fillText("Game Running", 50, 80);
+
+        const ctx = this.ctx;
+
+        ctx.fillStyle = "#111";
+
+        ctx.fillRect(
+            0,
+            0,
+            this.canvas.width,
+            this.canvas.height
+        );
+
+        this.flag.draw(ctx);
+
     }
-  
+
     loop = () => {
-      this.update();
-      this.draw();
-      requestAnimationFrame(this.loop);
-    };
-  }
+
+        this.update();
+
+        this.draw();
+
+        requestAnimationFrame(this.loop);
+
+    }
+
+}
