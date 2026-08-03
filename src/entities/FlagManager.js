@@ -9,10 +9,11 @@ export default class FlagManager {
 
     }
 
-    addFlag(x, y) {
+    addFlag(country, x, y) {
 
         const flag = new Flag(
             this.world,
+            country,
             x,
             y
         );
@@ -23,26 +24,13 @@ export default class FlagManager {
 
     }
 
-    // 👇 ADD IT HERE
-    spawnRandom(count, centerX, centerY) {
-
-        for (let i = 0; i < count; i++) {
-
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * 120;
-
-            const x = centerX + Math.cos(angle) * distance;
-            const y = centerY + Math.sin(angle) * distance;
-
-            this.addFlag(x, y);
-
-        }
-
-    }
-
     update() {
 
-        // Future logic
+        // Future features:
+        // - Eliminated flags
+        // - Winner detection
+        // - Sounds
+        // - Flag states
 
     }
 
