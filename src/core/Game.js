@@ -74,6 +74,7 @@ export default class Game {
     update() {
 
         this.physics.update();
+        this.arena.update();
         this.flagManager.update();
 
     }

@@ -2,20 +2,55 @@ export default class ArenaRenderer {
 
     draw(ctx, arena) {
 
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 6;
+        ctx.save();
 
-        ctx.beginPath();
-
-        ctx.arc(
+        ctx.translate(
             arena.cx,
-            arena.cy,
-            arena.radius,
-            0,
-            Math.PI * 2
+            arena.cy
         );
 
+        ctx.rotate(
+            arena.angle
+        );
+
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 6;
+        ctx.lineCap = "round";
+
+        const gapAngle =
+            (arena.gapSize / arena.segmentCount) *
+            Math.PI * 2;
+
+        const startGap = 0;
+        const endGap = gapAngle;
+
+        // Arc after the gap
+        ctx.beginPath();
+        ctx.arc(
+            0,
+            0,
+            arena.radius,
+            endGap,
+            Math.PI * 2,
+            false
+        );
         ctx.stroke();
+
+        // Arc before the gap (wrap-around)
+        if (startGap > 0) {
+            ctx.beginPath();
+            ctx.arc(
+                0,
+                0,
+                arena.radius,
+                0,
+                startGap,
+                false
+            );
+            ctx.stroke();
+        }
+
+        ctx.restore();
 
     }
 

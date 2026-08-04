@@ -8,22 +8,35 @@ export default class ArenaPhysics {
         this.cy = cy;
         this.radius = radius;
 
+        this.angle = 0;
+        this.rotationSpeed = 0.01;
+
+        this.segmentCount = 96;
+        this.thickness = 20;
+        this.gapSize = 12;
+
         this.segments = [];
 
-        const SEGMENTS = 96;
-        const THICKNESS = 20;
+        for (let i = 0; i < this.segmentCount; i++) {
 
-        for (let i = 0; i < SEGMENTS; i++) {
+            // Leave a gap
+            if (i < this.gapSize) {
+                continue;
+            }
 
-            const angle = (i / SEGMENTS) * Math.PI * 2;
+            const angle =
+                (i / this.segmentCount) * Math.PI * 2;
 
-            const x = cx + Math.cos(angle) * radius;
-            const y = cy + Math.sin(angle) * radius;
+            const x =
+                cx + Math.cos(angle) * radius;
+
+            const y =
+                cy + Math.sin(angle) * radius;
 
             const wall = Matter.Bodies.rectangle(
                 x,
                 y,
-                THICKNESS,
+                this.thickness,
                 32,
                 {
                     isStatic: true,
@@ -38,6 +51,52 @@ export default class ArenaPhysics {
         }
 
         Matter.World.add(world, this.segments);
+
+    }
+
+    update() {
+
+        this.angle += this.rotationSpeed;
+
+        if (this.angle > Math.PI * 2) {
+            this.angle -= Math.PI * 2;
+        }
+
+        let wallIndex = 0;
+
+        for (let i = 0; i < this.segmentCount; i++) {
+
+            if (i < this.gapSize) {
+                continue;
+            }
+
+            const wall = this.segments[wallIndex++];
+
+            const segmentAngle =
+                (i / this.segmentCount) * Math.PI * 2 +
+                this.angle;
+
+            const x =
+                this.cx +
+                Math.cos(segmentAngle) *
+                this.radius;
+
+            const y =
+                this.cy +
+                Math.sin(segmentAngle) *
+                this.radius;
+
+            Matter.Body.setPosition(wall, {
+                x,
+                y
+            });
+
+            Matter.Body.setAngle(
+                wall,
+                segmentAngle
+            );
+
+        }
 
     }
 
