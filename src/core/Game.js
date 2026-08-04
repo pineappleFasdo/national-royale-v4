@@ -8,6 +8,7 @@ import FlagLoader from "../assets/FlagLoader";
 import EliminationManager from "../managers/EliminationManager";
 import LayoutManager from "./LayoutManager";
 import countries from "../countries";
+import DrainSystem from "./DrainSystem";
 
 
 export default class Game {
@@ -19,6 +20,7 @@ export default class Game {
 
         this.physics = null;
         this.arena = null;
+        this.drain = null;
 
         this.flagManager = null;
         this.eliminationManager = null;
@@ -34,6 +36,8 @@ export default class Game {
 
         this.matchStartTime = Date.now();
         this.lastRemainingCount = -1;
+
+        
        
 
     }
@@ -53,6 +57,14 @@ export default class Game {
             this.layout.arenaY,
             this.layout.arenaRadius
         );
+
+        this.drain = new DrainSystem(
+            this.physics.engine,
+            this.physics.world,
+            this.layout.arenaRadius
+        );
+        
+        this.drain.createSensor();
     
         this.eliminationManager =
             new EliminationManager(this.arena);
@@ -114,7 +126,11 @@ export default class Game {
         this.arena.setRemainingFlags(
             this.flagManager.flags.length
         );
+        this.drain.update();
 
+this.drain.applyDrainForce(
+    this.flagManager.flags
+);
         const remaining = this.flagManager.flags.length;
     
 

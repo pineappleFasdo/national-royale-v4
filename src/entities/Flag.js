@@ -15,25 +15,38 @@ export default class Flag {
             this.width,
             this.height,
             {
+                label: "flag",
+
                 restitution: 0.98,
                 friction: 0,
                 frictionAir: 0
             }
         );
 
-        Matter.World.add(world, this.body);
+
+        Matter.World.add(
+            world,
+            this.body
+        );
+
 
         // Initial velocity for testing
         const speed = 6;
 
-        const angle = Math.random() * Math.PI * 2;
-        
-        Matter.Body.setVelocity(this.body, {
-            x: Math.cos(angle) * speed,
-            y: Math.sin(angle) * speed
-        });
+        const angle =
+            Math.random() * Math.PI * 2;
+
+
+        Matter.Body.setVelocity(
+            this.body,
+            {
+                x: Math.cos(angle) * speed,
+                y: Math.sin(angle) * speed
+            }
+        );
 
     }
+
 
     draw(ctx) {
 
@@ -42,19 +55,28 @@ export default class Flag {
 
         ctx.save();
 
-        ctx.translate(p.x, p.y);
+        ctx.translate(
+            p.x,
+            p.y
+        );
+
         ctx.rotate(angle);
+
 
         const img = this.country.image;
 
+
         if (img && img.complete) {
 
-            // Optional shadow
-            ctx.shadowColor = "rgba(0,0,0,0.35)";
+
+            ctx.shadowColor =
+                "rgba(0,0,0,0.35)";
+
             ctx.shadowBlur = 6;
 
-            // Rounded flag
+
             ctx.beginPath();
+
             ctx.roundRect(
                 -this.width / 2,
                 -this.height / 2,
@@ -62,7 +84,9 @@ export default class Flag {
                 this.height,
                 4
             );
+
             ctx.clip();
+
 
             ctx.drawImage(
                 img,
@@ -72,12 +96,15 @@ export default class Flag {
                 this.height
             );
 
-            // White border
+
             ctx.shadowBlur = 0;
+
             ctx.strokeStyle = "#fff";
             ctx.lineWidth = 1;
 
+
             ctx.beginPath();
+
             ctx.roundRect(
                 -this.width / 2,
                 -this.height / 2,
@@ -85,12 +112,15 @@ export default class Flag {
                 this.height,
                 4
             );
+
             ctx.stroke();
+
 
         } else {
 
-            // Fallback while image loads
+
             ctx.fillStyle = "#ff4444";
+
             ctx.fillRect(
                 -this.width / 2,
                 -this.height / 2,
@@ -99,6 +129,7 @@ export default class Flag {
             );
 
         }
+
 
         ctx.restore();
 

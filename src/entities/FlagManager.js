@@ -1,3 +1,4 @@
+import Matter from "matter-js";
 import Flag from "./Flag";
 
 export default class FlagManager {
@@ -8,6 +9,7 @@ export default class FlagManager {
         this.flags = [];
 
     }
+
 
     addFlag(country, x, y) {
 
@@ -24,15 +26,33 @@ export default class FlagManager {
 
     }
 
+
     update() {
 
-        // Future features:
-        // - Eliminated flags
-        // - Winner detection
-        // - Sounds
-        // - Flag states
+        // Remove flags that entered drain zone
+
+        for (let i = this.flags.length - 1; i >= 0; i--) {
+
+            const flag = this.flags[i];
+
+
+            if (flag.body.toRemove) {
+
+                Matter.World.remove(
+                    this.world,
+                    flag.body
+                );
+
+                this.flags.splice(i, 1);
+
+                continue;
+
+            }
+
+        }
 
     }
+
 
     draw(ctx) {
 
