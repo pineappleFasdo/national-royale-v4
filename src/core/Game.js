@@ -9,6 +9,7 @@ import EliminationManager from "../managers/EliminationManager";
 import LayoutManager from "./LayoutManager";
 import countries from "../countries";
 
+
 export default class Game {
 
     constructor(canvas) {
@@ -31,6 +32,10 @@ export default class Game {
         // Change this value whenever you want
         this.flagCount = 90;
 
+        this.matchStartTime = Date.now();
+        this.lastRemainingCount = -1;
+       
+
     }
 
     resize(width, height) {
@@ -48,7 +53,7 @@ export default class Game {
             this.layout.arenaY,
             this.layout.arenaRadius
         );
-
+    
         this.eliminationManager =
             new EliminationManager(this.arena);
 
@@ -106,6 +111,23 @@ export default class Game {
         this.eliminationManager.update(
             this.flagManager
         );
+        this.arena.setRemainingFlags(
+            this.flagManager.flags.length
+        );
+
+        const remaining = this.flagManager.flags.length;
+    
+
+
+        if (remaining !== this.lastRemainingCount) {
+        
+            this.lastRemainingCount = remaining;
+        
+            console.log(
+                `Remaining: ${remaining} | Time: ${((Date.now() - this.matchStartTime) / 1000).toFixed(1)}s`
+            );
+        
+        }
 
     }
 

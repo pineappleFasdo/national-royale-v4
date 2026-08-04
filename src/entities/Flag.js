@@ -15,7 +15,7 @@ export default class Flag {
             this.width,
             this.height,
             {
-                restitution: 1,
+                restitution: 0.98,
                 friction: 0,
                 frictionAir: 0
             }
@@ -24,9 +24,13 @@ export default class Flag {
         Matter.World.add(world, this.body);
 
         // Initial velocity for testing
+        const speed = 6;
+
+        const angle = Math.random() * Math.PI * 2;
+        
         Matter.Body.setVelocity(this.body, {
-            x: 5,
-            y: -3
+            x: Math.cos(angle) * speed,
+            y: Math.sin(angle) * speed
         });
 
     }

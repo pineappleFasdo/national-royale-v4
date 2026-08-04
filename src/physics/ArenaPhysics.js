@@ -13,19 +13,20 @@ export default class ArenaPhysics {
 
         this.segmentCount = 96;
         this.thickness = 20;
-        this.gapSize = 12;
+
+        this.initialGapSize = 12;
+        this.maxGapSize = 30;
+        this.gapSize = this.initialGapSize;
+
+        this.remainingFlags = 50;
 
         this.segments = [];
 
         for (let i = 0; i < this.segmentCount; i++) {
 
-            // Leave a gap
-            if (i < this.gapSize) {
-                continue;
-            }
-
             const angle =
-                (i / this.segmentCount) * Math.PI * 2;
+                (i / this.segmentCount) *
+                Math.PI * 2;
 
             const x =
                 cx + Math.cos(angle) * radius;
@@ -40,7 +41,7 @@ export default class ArenaPhysics {
                 32,
                 {
                     isStatic: true,
-                    angle: angle,
+                    angle,
                     restitution: 1,
                     friction: 0
                 }
@@ -54,6 +55,26 @@ export default class ArenaPhysics {
 
     }
 
+    setRemainingFlags(count) {
+
+        this.remainingFlags = count;
+
+        const t = Math.max(
+            0,
+            Math.min(
+                1,
+                (50 - count) / 48
+            )
+        );
+
+        this.gapSize = Math.round(
+            this.initialGapSize +
+            (this.maxGapSize -
+             this.initialGapSize) * t
+        );
+
+    }
+
     update() {
 
         this.angle += this.rotationSpeed;
@@ -62,19 +83,32 @@ export default class ArenaPhysics {
             this.angle -= Math.PI * 2;
         }
 
-        let wallIndex = 0;
+        const gapStart =
+            Math.floor(
+                (this.angle /
+                (Math.PI * 2)) *
+                this.segmentCount
+            );
 
         for (let i = 0; i < this.segmentCount; i++) {
 
-            if (i < this.gapSize) {
-                continue;
-            }
+            const wall =
+                this.segments[i];
 
-            const wall = this.segments[wallIndex++];
+            const inGap =
+                (
+                    (i - gapStart +
+                    this.segmentCount)
+                    %
+                    this.segmentCount
+                ) < this.gapSize;
+
+            wall.collisionFilter.mask =
+                inGap ? 0 : 0xFFFFFFFF;
 
             const segmentAngle =
-                (i / this.segmentCount) * Math.PI * 2 +
-                this.angle;
+                (i / this.segmentCount) *
+                Math.PI * 2;
 
             const x =
                 this.cx +
@@ -86,10 +120,10 @@ export default class ArenaPhysics {
                 Math.sin(segmentAngle) *
                 this.radius;
 
-            Matter.Body.setPosition(wall, {
-                x,
-                y
-            });
+            Matter.Body.setPosition(
+                wall,
+                { x, y }
+            );
 
             Matter.Body.setAngle(
                 wall,
