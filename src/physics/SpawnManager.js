@@ -4,16 +4,34 @@ export default class SpawnManager {
 
         const positions = [];
 
-        const spacing = flagRadius * 2.2;
+        // Adaptive spacing
+        let spacing;
+
+        if (count <= 10) {
+            spacing = flagRadius * 2.2;
+        } else if (count <= 25) {
+            spacing = flagRadius * 1.9;
+        } else if (count <= 50) {
+            spacing = flagRadius * 1.6;
+        } else if (count <= 100) {
+            spacing = flagRadius * 1.35;
+        } else {
+            spacing = flagRadius * 1.15;
+        }
+
+        const verticalSpacing = spacing * 0.866;
 
         for (
             let y = -arenaRadius + spacing;
             y <= arenaRadius - spacing;
-            y += spacing * 0.866
+            y += verticalSpacing
         ) {
 
+            const row =
+                Math.round(y / verticalSpacing);
+
             const rowOffset =
-                Math.round(y / (spacing * 0.866)) % 2 === 0
+                row % 2 === 0
                     ? 0
                     : spacing / 2;
 
@@ -50,7 +68,7 @@ export default class SpawnManager {
             );
 
             [positions[i], positions[j]] =
-            [positions[j], positions[i]];
+                [positions[j], positions[i]];
 
         }
 

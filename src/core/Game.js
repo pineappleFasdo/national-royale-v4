@@ -26,8 +26,10 @@ export default class Game {
         this.bottomTrayRenderer = new BottomTrayRenderer();
 
         this.flagLoader = new FlagLoader();
-
         this.layout = new LayoutManager();
+
+        // Change this value whenever you want
+        this.flagCount = 90;
 
     }
 
@@ -36,13 +38,10 @@ export default class Game {
         this.canvas.width = width;
         this.canvas.height = height;
 
-        // Calculate broadcast layout
         this.layout.update(width, height);
 
-        // Physics world
         this.physics = new PhysicsWorld(width, height);
 
-        // Arena
         this.arena = new ArenaPhysics(
             this.physics.world,
             this.layout.arenaX,
@@ -50,19 +49,22 @@ export default class Game {
             this.layout.arenaRadius
         );
 
-        // Elimination manager
         this.eliminationManager =
             new EliminationManager(this.arena);
 
-        // Flag manager
         this.flagManager =
             new FlagManager(this.physics.world);
 
-        // Load flag images
+        // Load all flag images
         countries.forEach(country => {
             country.image =
                 this.flagLoader.load(country.code);
         });
+
+        const flagCount = Math.min(
+            this.flagCount,
+            countries.length
+        );
 
         // Generate spawn positions
         const positions = SpawnManager.generate(
@@ -70,11 +72,18 @@ export default class Game {
             this.layout.arenaY,
             this.layout.arenaRadius - 30,
             20,
-            countries.length
+            flagCount
+        );
+
+        console.log("Spawn positions:", positions.length);
+
+        const actualCount = Math.min(
+            flagCount,
+            positions.length
         );
 
         // Spawn flags
-        for (let i = 0; i < positions.length; i++) {
+        for (let i = 0; i < actualCount; i++) {
 
             this.flagManager.addFlag(
                 countries[i],
