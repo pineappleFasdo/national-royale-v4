@@ -1,9 +1,12 @@
 import PhysicsWorld from "../physics/PhysicsWorld";
 import ArenaPhysics from "../physics/ArenaPhysics";
 import ArenaRenderer from "../render/ArenaRenderer";
+import BottomTrayRenderer from "../render/BottomTrayRenderer";
 import FlagManager from "../entities/FlagManager";
 import SpawnManager from "../physics/SpawnManager";
 import FlagLoader from "../assets/FlagLoader";
+import EliminationManager from "../managers/EliminationManager";
+import LayoutManager from "./LayoutManager";
 import countries from "../countries";
 
 export default class Game {
@@ -17,9 +20,14 @@ export default class Game {
         this.arena = null;
 
         this.flagManager = null;
+        this.eliminationManager = null;
+
         this.arenaRenderer = new ArenaRenderer();
+        this.bottomTrayRenderer = new BottomTrayRenderer();
 
         this.flagLoader = new FlagLoader();
+
+        this.layout = new LayoutManager();
 
     }
 
@@ -28,37 +36,44 @@ export default class Game {
         this.canvas.width = width;
         this.canvas.height = height;
 
+        // Calculate broadcast layout
+        this.layout.update(width, height);
+
         // Physics world
         this.physics = new PhysicsWorld(width, height);
 
         // Arena
         this.arena = new ArenaPhysics(
             this.physics.world,
-            width / 2,
-            height / 2,
-            250
+            this.layout.arenaX,
+            this.layout.arenaY,
+            this.layout.arenaRadius
         );
+
+        // Elimination manager
+        this.eliminationManager =
+            new EliminationManager(this.arena);
 
         // Flag manager
-        this.flagManager = new FlagManager(
-            this.physics.world
-        );
+        this.flagManager =
+            new FlagManager(this.physics.world);
 
-        // Load all flag images
+        // Load flag images
         countries.forEach(country => {
-            country.image = this.flagLoader.load(country.code);
+            country.image =
+                this.flagLoader.load(country.code);
         });
 
         // Generate spawn positions
         const positions = SpawnManager.generate(
-            width / 2,
-            height / 2,
-            220,
+            this.layout.arenaX,
+            this.layout.arenaY,
+            this.layout.arenaRadius - 30,
             20,
             countries.length
         );
 
-        // Spawn all countries
+        // Spawn flags
         for (let i = 0; i < positions.length; i++) {
 
             this.flagManager.addFlag(
@@ -74,8 +89,14 @@ export default class Game {
     update() {
 
         this.physics.update();
+
         this.arena.update();
+
         this.flagManager.update();
+
+        this.eliminationManager.update(
+            this.flagManager
+        );
 
     }
 
@@ -98,11 +119,19 @@ export default class Game {
 
         this.flagManager.draw(ctx);
 
+        this.bottomTrayRenderer.draw(
+            ctx,
+            this.eliminationManager.eliminated,
+            this.canvas.width,
+            this.canvas.height
+        );
+
     }
 
     loop = () => {
 
         this.update();
+
         this.draw();
 
         requestAnimationFrame(this.loop);
