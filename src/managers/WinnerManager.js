@@ -1,50 +1,67 @@
 export default class WinnerManager {
 
     constructor() {
+        this.winner  = null;
+        this.onWin   = null;
 
-        this.finished = false;
-        this.winner = null;
-        this.finishedTime = 0;
-        this.onWin = null;
-
+        // Persistent across rounds — keyed by country code
+        this._wins   = this._loadWins();
     }
+
+    // ── Persistence helpers ───────────────────────────────────────────
+
+    _loadWins() {
+        try {
+            const raw = localStorage.getItem("flagBattle_wins");
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
+    }
+
+    _saveWins() {
+        try {
+            localStorage.setItem("flagBattle_wins", JSON.stringify(this._wins));
+        } catch { /* storage blocked */ }
+    }
+
+    /** Returns sorted leaderboard array:
+     *  [{ code, name, image, wins }, ...] descending */
+    getLeaderboard() {
+        return Object.entries(this._wins)
+            .map(([code, entry]) => ({
+                code,
+                name  : entry.name,
+                image : entry.image,
+                wins  : entry.wins,
+            }))
+            .sort((a, b) => b.wins - a.wins);
+    }
+
+    // ── Game logic ────────────────────────────────────────────────────
 
     update(flagManager) {
+        if (this.winner) return;
+        if (!flagManager?.flags) return;
 
-        if (this.finished) return;
+        const remaining = flagManager.flags;
+        if (remaining.length !== 1) return;
 
-        if (flagManager.flags.length === 1) {
+        const flag = remaining[0];
+        this.winner = flag;
 
-            this.finished = true;
-            this.winner = flagManager.flags[0];
-            this.finishedTime = performance.now();
-
-            console.log(
-                "🏆 Winner:",
-                this.winner.country.name
-            );
-
-            if (this.onWin) {
-                this.onWin(this.winner);
-            }
-
+        // Record the win
+        const { code, name, image } = flag.country;
+        if (!this._wins[code]) {
+            this._wins[code] = { name, image, wins: 0 };
         }
+        this._wins[code].wins++;
+        this._saveWins();
 
-    }
-
-    shouldRestart() {
-
-        return this.finished &&
-               performance.now() - this.finishedTime > 4000;
-
+        if (this.onWin) this.onWin(flag);
     }
 
     reset() {
-
-        this.finished = false;
         this.winner = null;
-        this.finishedTime = 0;
-
     }
-
 }
