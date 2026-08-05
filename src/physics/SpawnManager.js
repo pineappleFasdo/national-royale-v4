@@ -1,78 +1,111 @@
 export default class SpawnManager {
 
-    static generate(cx, cy, arenaRadius, flagRadius, count) {
+    /**
+     * Find the largest hex-grid spacing where at least `count` slots
+     * fit inside `spawnRadius`, then return the positions + the spacing
+     * used (so the caller can size flags to match).
+     *
+     * @returns {{ positions: {x,y}[], spacing: number }}
+     */
+    static generate(cx, cy, spawnRadius, count) {
 
-        const positions = [];
+        let chosenSpacing = 8; // absolute minimum fallback
 
-        // Adaptive spacing
-        let spacing;
+        for (let s = 120; s >= 8; s -= 0.5) {
 
-        if (count <= 10) {
-            spacing = flagRadius * 2.2;
-        } else if (count <= 25) {
-            spacing = flagRadius * 1.9;
-        } else if (count <= 50) {
-            spacing = flagRadius * 1.6;
-        } else if (count <= 100) {
-            spacing = flagRadius * 1.35;
-        } else {
-            spacing = flagRadius * 1.15;
+            const slots = SpawnManager._countSlots(spawnRadius, s);
+
+            if (slots >= count) {
+                chosenSpacing = s;
+                break;
+            }
+
         }
 
-        const verticalSpacing = spacing * 0.866;
+        const positions = SpawnManager._buildPositions(
+            cx, cy, spawnRadius, chosenSpacing
+        );
+
+        // Shuffle
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [positions[i], positions[j]] = [positions[j], positions[i]];
+        }
+
+        return {
+            positions : positions.slice(0, count),
+            spacing   : chosenSpacing
+        };
+
+    }
+
+
+    static _countSlots(spawnRadius, spacing) {
+
+        const vSpacing = spacing * 0.866;
+        let count = 0;
 
         for (
-            let y = -arenaRadius + spacing;
-            y <= arenaRadius - spacing;
-            y += verticalSpacing
+            let y = -spawnRadius + spacing;
+            y <= spawnRadius - spacing;
+            y += vSpacing
         ) {
 
-            const row =
-                Math.round(y / verticalSpacing);
-
-            const rowOffset =
-                row % 2 === 0
-                    ? 0
-                    : spacing / 2;
+            const row = Math.round(y / vSpacing);
+            const rowOffset = row % 2 === 0 ? 0 : spacing / 2;
 
             for (
-                let x = -arenaRadius + spacing;
-                x <= arenaRadius - spacing;
+                let x = -spawnRadius + spacing;
+                x <= spawnRadius - spacing;
                 x += spacing
             ) {
 
                 const px = x + rowOffset;
-                const py = y;
 
-                if (
-                    Math.hypot(px, py)
-                    <= arenaRadius - spacing
-                ) {
-
-                    positions.push({
-                        x: cx + px,
-                        y: cy + py
-                    });
-
+                if (Math.hypot(px, y) <= spawnRadius - spacing) {
+                    count++;
                 }
 
             }
 
         }
 
-        // Shuffle positions
-        for (let i = positions.length - 1; i > 0; i--) {
+        return count;
 
-            const j = Math.floor(
-                Math.random() * (i + 1)
-            );
+    }
 
-            [positions[i], positions[j]] =
-                [positions[j], positions[i]];
+
+    static _buildPositions(cx, cy, spawnRadius, spacing) {
+
+        const vSpacing = spacing * 0.866;
+        const positions = [];
+
+        for (
+            let y = -spawnRadius + spacing;
+            y <= spawnRadius - spacing;
+            y += vSpacing
+        ) {
+
+            const row = Math.round(y / vSpacing);
+            const rowOffset = row % 2 === 0 ? 0 : spacing / 2;
+
+            for (
+                let x = -spawnRadius + spacing;
+                x <= spawnRadius - spacing;
+                x += spacing
+            ) {
+
+                const px = x + rowOffset;
+
+                if (Math.hypot(px, y) <= spawnRadius - spacing) {
+                    positions.push({ x: cx + px, y: cy + y });
+                }
+
+            }
 
         }
 
-        return positions.slice(0, count);
+        return positions;
 
     }
 

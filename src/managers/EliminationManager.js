@@ -1,8 +1,11 @@
+import Matter from "matter-js";
+
 export default class EliminationManager {
 
-    constructor(arena) {
+    constructor(arena, world) {
 
         this.arena = arena;
+        this.world = world;
         this.eliminated = [];
 
     }
@@ -22,6 +25,17 @@ export default class EliminationManager {
 
             // Eliminate once the flag is clearly outside
             if (distance > this.arena.radius + 40) {
+
+                // IMPORTANT: also remove the physics body from the
+                // world. Previously only the render/tracking array
+                // was cleared, so every eliminated flag kept living
+                // in the Matter world forever as an invisible
+                // collider, piling up right around the gap and
+                // physically jamming flags that were trying to exit.
+                Matter.World.remove(
+                    this.world,
+                    flag.body
+                );
 
                 this.eliminated.push(flag);
 

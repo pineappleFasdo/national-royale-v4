@@ -1,23 +1,21 @@
 import Matter from "matter-js";
-import Flag from "./Flag";
+import Flag   from "./Flag";
 
 export default class FlagManager {
 
     constructor(world) {
-
         this.world = world;
         this.flags = [];
-
     }
 
 
-    addFlag(country, x, y) {
+    addFlag(country, x, y, width, height) {
 
         const flag = new Flag(
             this.world,
             country,
-            x,
-            y
+            x, y,
+            width, height
         );
 
         this.flags.push(flag);
@@ -29,24 +27,13 @@ export default class FlagManager {
 
     update() {
 
-        // Remove flags that entered drain zone
-
         for (let i = this.flags.length - 1; i >= 0; i--) {
 
             const flag = this.flags[i];
 
-
             if (flag.body.toRemove) {
-
-                Matter.World.remove(
-                    this.world,
-                    flag.body
-                );
-
+                Matter.World.remove(this.world, flag.body);
                 this.flags.splice(i, 1);
-
-                continue;
-
             }
 
         }
@@ -57,9 +44,7 @@ export default class FlagManager {
     draw(ctx) {
 
         for (const flag of this.flags) {
-
             flag.draw(ctx);
-
         }
 
     }

@@ -2,24 +2,17 @@ import Matter from "matter-js";
 
 export default class DrainSystem {
 
-    constructor(engine, world, arenaRadius) {
+    constructor(engine, world, arena) {
 
         this.engine = engine;
         this.world = world;
-        this.arenaRadius = arenaRadius;
 
-        this.angle = 0;
-
-        this.opening = false;
-
-        this.delay = 3000;
-        this.startTime = Date.now();
-
-        this.gapSize = 0.15;
-
-        this.rotationSpeed = 0.002;
-
-        this.growthRate = 0.00005;
+        // Single source of truth for where the gap actually is.
+        // Previously this class tracked its own angle/speed and
+        // slowly drifted out of sync with the real wall gap in
+        // ArenaPhysics — that mismatch was the main cause of flags
+        // clumping/vibrating against solid wall instead of exiting.
+        this.arena = arena;
 
         this.sensor = null;
 
@@ -28,10 +21,12 @@ export default class DrainSystem {
 
     createSensor() {
 
+        // Purely a visual/debug marker now, sized to roughly match
+        // the gap opening. It no longer deletes flags on contact.
         this.sensor = Matter.Bodies.circle(
             0,
             0,
-            this.arenaRadius * 0.12,
+            this.arena.radius * 0.1,
             {
                 isStatic: true,
                 isSensor: true,
@@ -39,114 +34,58 @@ export default class DrainSystem {
             }
         );
 
-
         Matter.World.add(
             this.world,
             this.sensor
         );
 
-
-        this.setupCollision();
-
     }
 
 
-    setupCollision() {
+    // Center angle + half-width (radians) of the CURRENT real gap,
+    // read straight from ArenaPhysics so this is always in sync.
+    getGapWindow() {
 
-        Matter.Events.on(
-            this.engine,
-            "collisionStart",
-            event => {
+        const gapStart = this.arena.gapStart || 0;
+        const segmentCount = this.arena.segmentCount;
+        const gapSize = this.arena.gapSize;
 
-                event.pairs.forEach(pair => {
+        const gapCenterIndex =
+            gapStart + gapSize / 2;
 
-                    const a = pair.bodyA;
-                    const b = pair.bodyB;
+        const gapCenterAngle =
+            (gapCenterIndex / segmentCount) *
+            Math.PI * 2;
 
+        const gapHalfAngle =
+            (gapSize / segmentCount) *
+            Math.PI;
 
-                    if (
-                        a.label === "drain" ||
-                        b.label === "drain"
-                    ) {
-
-                        const flag =
-                            a.label === "drain"
-                            ? b
-                            : a;
-
-
-                        if (flag.label === "flag") {
-
-                            flag.toRemove = true;
-
-                        }
-
-                    }
-
-                });
-
-            }
-        );
+        return { gapCenterAngle, gapHalfAngle };
 
     }
 
 
     update() {
 
-        const elapsed =
-            Date.now() - this.startTime;
-
-
-        if (elapsed < this.delay) {
-            return;
-        }
-
-
-        this.opening = true;
-
-
-        // Rotate drain opening
-
-        this.angle += this.rotationSpeed;
-
-
-        // Increase opening size slowly
-
-        if (this.gapSize < 1.0) {
-
-            this.gapSize += this.growthRate;
-
-        }
-
-
-        this.updateSensor();
-
-    }
-
-
-    updateSensor() {
-
         if (!this.sensor) return;
 
+        const { gapCenterAngle } =
+            this.getGapWindow();
 
         const x =
-            Math.cos(this.angle) *
-            this.arenaRadius *
-            0.75;
-
+            this.arena.cx +
+            Math.cos(gapCenterAngle) *
+            this.arena.radius;
 
         const y =
-            Math.sin(this.angle) *
-            this.arenaRadius *
-            0.75;
-
+            this.arena.cy +
+            Math.sin(gapCenterAngle) *
+            this.arena.radius;
 
         Matter.Body.setPosition(
             this.sensor,
-            {
-                x,
-                y
-            }
+            { x, y }
         );
 
     }
@@ -154,54 +93,85 @@ export default class DrainSystem {
 
     applyDrainForce(flags) {
 
-        if (!this.opening) return;
+        const { gapCenterAngle, gapHalfAngle } =
+            this.getGapWindow();
 
+        const cx = this.arena.cx;
+        const cy = this.arena.cy;
 
-        const target =
-            this.sensor.position;
-
+        // How wide a band (in angle) around the gap starts pulling
+        // flags toward it, like traffic merging toward an exit.
+        const funnelHalfAngle = gapHalfAngle * 3.5;
 
         for (const flag of flags) {
 
+            const body = flag.body;
 
-            const body =
-                flag.body;
+            const dx = body.position.x - cx;
+            const dy = body.position.y - cy;
 
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const flagAngle = Math.atan2(dy, dx);
 
-            const dx =
-                target.x -
-                body.position.x;
+            // Signed angular distance to the gap center, in [-PI, PI]
+            let diff = flagAngle - gapCenterAngle;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
 
+            const nearWall = dist > this.arena.radius * 0.55;
 
-            const dy =
-                target.y -
-                body.position.y;
+            if (!nearWall) continue;
+            if (Math.abs(diff) > funnelHalfAngle) continue;
 
+            // 1) Tangential "funnel" pull: drag flags along the
+            //    inside of the wall toward the gap's center angle.
+            //    Strength ramps up the closer they already are, so
+            //    flags queue up near the opening instead of getting
+            //    yanked from anywhere in the arena.
+            const closeness =
+                1 - Math.abs(diff) / funnelHalfAngle;
 
-            const distance =
-                Math.sqrt(
-                    dx * dx +
-                    dy * dy
-                );
+            const tangentialStrength =
+                0.0006 * closeness;
 
+            const tx = -Math.sin(flagAngle);
+            const ty = Math.cos(flagAngle);
+            const dir = diff > 0 ? -1 : 1;
 
-            if (
-                distance <
-                this.arenaRadius * 0.7
-            ) {
+            Matter.Body.applyForce(
+                body,
+                body.position,
+                {
+                    x: tx * tangentialStrength * dir,
+                    y: ty * tangentialStrength * dir
+                }
+            );
 
+            // 2) Once actually inside the gap's angular window and
+            //    close to the boundary, push it OUT radially and
+            //    give it some spin — this is the visible "flush".
+            const inGapWindow =
+                Math.abs(diff) < gapHalfAngle;
 
-                const strength =
-                    0.00003;
+            const atBoundary =
+                dist > this.arena.radius * 0.75;
 
+            if (inGapWindow && atBoundary) {
+
+                const ejectStrength = 0.003;
 
                 Matter.Body.applyForce(
                     body,
                     body.position,
                     {
-                        x: dx * strength,
-                        y: dy * strength
+                        x: (dx / dist) * ejectStrength,
+                        y: (dy / dist) * ejectStrength
                     }
+                );
+
+                Matter.Body.setAngularVelocity(
+                    body,
+                    body.angularVelocity +
+                    (Math.random() - 0.5) * 0.15
                 );
 
             }
@@ -215,7 +185,6 @@ export default class DrainSystem {
 
         if (!this.sensor) return;
 
-
         ctx.beginPath();
 
         ctx.arc(
@@ -226,7 +195,7 @@ export default class DrainSystem {
             Math.PI * 2
         );
 
-        ctx.strokeStyle = "red";
+        ctx.strokeStyle = "rgba(255,60,60,0.5)";
 
         ctx.stroke();
 
