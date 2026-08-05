@@ -49,8 +49,6 @@ export default class Flag {
 
         if (img && img.complete && img.naturalWidth > 0) {
 
-            ctx.shadowColor = "rgba(0,0,0,0.35)";
-            ctx.shadowBlur  = Math.max(2, w * 0.1);
 
             ctx.beginPath();
             ctx.roundRect(-w / 2, -h / 2, w, h, radius);
@@ -58,14 +56,12 @@ export default class Flag {
 
             ctx.drawImage(img, -w / 2, -h / 2, w, h);
 
-            ctx.shadowBlur = 0;
+   
 
             ctx.strokeStyle = "rgba(255,255,255,0.8)";
             ctx.lineWidth   = Math.max(0.5, w * 0.025);
 
-            ctx.beginPath();
-            ctx.roundRect(-w / 2, -h / 2, w, h, radius);
-            ctx.stroke();
+        
 
         } else {
 

@@ -9,6 +9,11 @@ import EliminationManager from "../managers/EliminationManager";
 import LayoutManager      from "./LayoutManager";
 import countries          from "../countries";
 import DrainSystem        from "./DrainSystem";
+import WinnerManager from "../managers/WinnerManager";
+import WinnerRender from "../render/WinnerRenderer";
+import Confetti from "../effects/Confetti";
+import AudioManager from "../audio/AudioManager";
+import Matter from "matter-js";
 
 
 export default class Game {
@@ -36,6 +41,12 @@ export default class Game {
         countries.forEach(c => {
             c.image = this.flagLoader.load(c.code);
         });
+        this.winnerManager = new WinnerManager();
+        this.winnerRender = new WinnerRender();
+        this.confetti = new Confetti();
+        this.audio = new AudioManager();
+        this.restartTimer = null;
+this.restartCountdown = 0;
 
     }
 
@@ -108,6 +119,36 @@ export default class Game {
 
         this.matchStartTime     = Date.now();
         this.lastRemainingCount = -1;
+        this.winnerManager.onWin = (winner) => {
+
+            this.confetti.start(
+                this.canvas.width / 2,
+                this.canvas.height / 2
+            );
+        
+            this.audio.speak(
+                `${winner.country.name} wins!`
+            );
+        
+            // Auto restart after 5 seconds
+            this.restartCountdown = 3;
+
+            this.restartTimer = setInterval(() => {
+            
+                this.restartCountdown--;
+            
+                if (this.restartCountdown <= 0) {
+            
+                    clearInterval(this.restartTimer);
+                    this.restartTimer = null;
+            
+                    this.restartMatch();
+            
+                }
+            
+            }, 1000);
+        
+        };
 
     }
 
@@ -129,7 +170,15 @@ export default class Game {
 
         const remaining = this.flagManager.flags.length;
          
-        const t0 = performance.now(); this.physics.update(); const t1 = performance.now(); if (performance.now() % 1000 < 16) { console.log("Physics:", (t1 - t0).toFixed(2), "ms"); }
+        const t0 = performance.now();
+
+
+const t1 = performance.now();
+
+
+this.winnerManager.update(this.flagManager);
+this.confetti.update();
+
 
     }
 
@@ -137,13 +186,12 @@ export default class Game {
     draw() {
 
         const { ctx } = this;
+        const t0 = performance.now();
 
         ctx.fillStyle = "#111";
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        if (this.arena.state === ArenaPhysics.STATE_INTRO) {
-            this._drawIntroOverlay(ctx);
-        }
+       
 
         this.arenaRenderer.draw(ctx, this.arena);
         this.flagManager.draw(ctx);
@@ -159,9 +207,94 @@ export default class Game {
 
         this._drawStateLabel(ctx);
 
+    
+
+        const t1 = performance.now();
+
+    if (performance.now() % 1000 < 16) {
+        console.log(
+            "Draw:",
+            (t1 - t0).toFixed(2),
+            "ms"
+        );
+    }
+    if (this.winnerManager.finished) {
+
+        this.winnerRender.draw(
+            ctx,
+            this.winnerManager.winner,
+            this.canvas.width,
+            this.canvas.height
+        );
+    
+    }
+    this.confetti.draw(ctx);
+    this.drawRestartCountdown(ctx);
+
     }
 
+    restartMatch() {
 
+        console.log("Restarting new match...");
+    
+        // Reset winner display
+        this.winnerManager.reset();
+    
+        // Remove old physics flags
+        this.flagManager.flags.forEach(flag => {
+    
+            Matter.World.remove(
+                this.physics.world,
+                flag.body
+            );
+    
+        });
+    
+        // Clear flags
+        this.flagManager.flags = [];
+    
+        // Clear eliminated tray
+        this.eliminationManager.eliminated = [];
+    
+        // Reset timer
+        this.matchStartTime = Date.now();
+    
+        // Spawn fresh countries
+        const spawnRadius = this.layout.arenaRadius - 20;
+    
+        const { positions, spacing } = SpawnManager.generate(
+            this.layout.arenaX,
+            this.layout.arenaY,
+            spawnRadius,
+            countries.length
+        );
+    
+        const flagW = Math.max(6, spacing * 0.82);
+        const flagH = Math.max(4, flagW * 0.70);
+    
+    
+        for (let i = 0; i < countries.length; i++) {
+    
+            this.flagManager.addFlag(
+                countries[i],
+                positions[i].x,
+                positions[i].y,
+                flagW,
+                flagH
+            );
+    
+        }
+    
+    
+        this.arena.setTotalFlags(
+            countries.length
+        );
+    
+        this.arena.setRemainingFlags(
+            countries.length
+        );
+    
+    }
     _drawIntroOverlay(ctx) {
 
         const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 180);
@@ -220,5 +353,32 @@ export default class Game {
         this.draw();
         requestAnimationFrame(this.loop);
     };
+
+    drawRestartCountdown(ctx) {
+
+        if (this.restartCountdown <= 0) return;
+    
+    
+        ctx.save();
+    
+        ctx.font = "bold 80px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+    
+        ctx.fillStyle = "white";
+        ctx.shadowColor = "black";
+        ctx.shadowBlur = 15;
+    
+    
+        ctx.fillText(
+            this.restartCountdown,
+            this.canvas.width / 2,
+            this.canvas.height / 2
+        );
+    
+    
+        ctx.restore();
+    
+    }
 
 }
