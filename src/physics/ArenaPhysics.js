@@ -12,17 +12,15 @@ export default class ArenaPhysics {
         this.cy     = cy;
         this.radius = radius;
 
-        // Faster rotation: ~one full lap every 4.5 s at 60fps
         this.rotationSpeed = 0.022;
         this.angle         = 0;
 
         this.segmentCount = 96;
         this.thickness    = 20;
 
-        // Smaller gap = slower drain effect
-        this.initialGapSize = 6;   // ~22° open at game start
-        this.maxGapSize     = 18;  // ~67° open when last flag remains
-        this.gapSize        = 0;   // closed during INTRO
+        this.initialGapSize = 6;
+        this.maxGapSize     = 18;
+        this.gapSize        = 0;
 
         this.state           = ArenaPhysics.STATE_INTRO;
         this.introDuration   = 180;
@@ -36,9 +34,7 @@ export default class ArenaPhysics {
         this.segments = [];
 
         for (let i = 0; i < this.segmentCount; i++) {
-
             const segAngle = (i / this.segmentCount) * Math.PI * 2;
-
             const wall = Matter.Bodies.rectangle(
                 cx + Math.cos(segAngle) * radius,
                 cy + Math.sin(segAngle) * radius,
@@ -51,13 +47,10 @@ export default class ArenaPhysics {
                     label       : "arenaWall"
                 }
             );
-
             this.segments.push(wall);
-
         }
 
         Matter.World.add(world, this.segments);
-
     }
 
 
@@ -68,22 +61,14 @@ export default class ArenaPhysics {
 
 
     setRemainingFlags(count) {
-
         this.remainingFlags = count;
-
         if (this.state !== ArenaPhysics.STATE_PLAYING) return;
 
         const eliminated = this.totalFlags - count;
-        const t = Math.max(
-            0,
-            Math.min(1, eliminated / Math.max(1, this.totalFlags - 1))
-        );
-
+        const t = Math.max(0, Math.min(1, eliminated / Math.max(1, this.totalFlags - 1)));
         this.gapSize = Math.round(
-            this.initialGapSize +
-            (this.maxGapSize - this.initialGapSize) * t
+            this.initialGapSize + (this.maxGapSize - this.initialGapSize) * t
         );
-
     }
 
 
@@ -91,6 +76,38 @@ export default class ArenaPhysics {
         if (this.state === ArenaPhysics.STATE_INTRO) {
             this.state        = ArenaPhysics.STATE_OPENING;
             this.openingTimer = 0;
+        }
+    }
+
+
+    /**
+     * Force-sync ALL wall collision masks immediately without waiting for update().
+     * Call this any time gapSize or state is changed outside the normal loop
+     * (e.g. on round reset) to prevent a one-frame ghost-gap that lets freshly-
+     * spawned flags leak through the wall.
+     */
+    syncWalls() {
+        const effectiveGap = (this.state === ArenaPhysics.STATE_PLAYING)
+            ? this.gapSize
+            : 0;
+
+        const gapStart = Math.floor(
+            (this.angle / (Math.PI * 2)) * this.segmentCount
+        );
+
+        for (let i = 0; i < this.segmentCount; i++) {
+            const wall  = this.segments[i];
+            const inGap = ((i - gapStart + this.segmentCount) % this.segmentCount)
+                          < effectiveGap;
+
+            wall.collisionFilter.mask = inGap ? 0 : 0xFFFFFFFF;
+
+            const segAngle = (i / this.segmentCount) * Math.PI * 2;
+            Matter.Body.setPosition(wall, {
+                x: this.cx + Math.cos(segAngle) * this.radius,
+                y: this.cy + Math.sin(segAngle) * this.radius,
+            });
+            Matter.Body.setAngle(wall, segAngle);
         }
     }
 
@@ -106,24 +123,17 @@ export default class ArenaPhysics {
     update() {
 
         if (this.state === ArenaPhysics.STATE_INTRO) {
-
             this.introTimer++;
-            this.rotationSpeed =
-                0.022 + 0.010 * Math.sin(this.introTimer * 0.06);
+            this.rotationSpeed = 0.022 + 0.010 * Math.sin(this.introTimer * 0.06);
 
             if (this.introTimer >= this.introDuration) {
                 this.startOpening();
             }
 
         } else if (this.state === ArenaPhysics.STATE_OPENING) {
-
             this.openingTimer++;
-
             const t = Math.min(1, this.openingTimer / this.openingDuration);
-            const eased = t < 0.5
-                ? 2 * t * t
-                : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
+            const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
             this.gapSize       = Math.round(this.initialGapSize * eased);
             this.rotationSpeed = 0.022;
 
@@ -133,9 +143,7 @@ export default class ArenaPhysics {
             }
 
         } else {
-
             this.rotationSpeed = 0.022;
-
         }
 
         this.angle += this.rotationSpeed;
@@ -146,26 +154,18 @@ export default class ArenaPhysics {
         );
 
         for (let i = 0; i < this.segmentCount; i++) {
-
-            const wall = this.segments[i];
-
-            const inGap =
-                ((i - this.gapStart + this.segmentCount) % this.segmentCount)
-                < this.gapSize;
+            const wall  = this.segments[i];
+            const inGap = ((i - this.gapStart + this.segmentCount) % this.segmentCount)
+                          < this.gapSize;
 
             wall.collisionFilter.mask = inGap ? 0 : 0xFFFFFFFF;
 
             const segAngle = (i / this.segmentCount) * Math.PI * 2;
-
             Matter.Body.setPosition(wall, {
                 x: this.cx + Math.cos(segAngle) * this.radius,
                 y: this.cy + Math.sin(segAngle) * this.radius
             });
-
             Matter.Body.setAngle(wall, segAngle);
-
         }
-
     }
-
 }

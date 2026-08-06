@@ -1,26 +1,28 @@
 export default class LeaderboardRenderer {
 
-    draw(ctx, rows, x, y, width, rowH = 26, maxRows = 5) {
+    draw(ctx, rows, x, y, width, rowH = 28, maxRows = 5) {
 
-        if (!rows || rows.length === 0) return;
+        // Always render all maxRows — null slots get dash placeholders so the
+        // panel is visible from frame one and the layout never shifts.
+        const filled  = (rows ?? []).slice(0, maxRows);
+        const visible = Array.from({ length: maxRows }, (_, i) => filled[i] ?? null);
+        const totalH  = rowH * maxRows;
+        const padL    = 10;
+        const flagW   = Math.round(rowH * 1.40);
+        const flagH   = Math.round(rowH * 0.70);
+        const fontSize = Math.max(11, Math.round(rowH * 0.46));
 
-        const visible  = rows.slice(0, maxRows);
-        const totalH   = rowH * visible.length;
-        const padL     = Math.round(rowH * 0.35);
-        const flagW    = Math.round(rowH * 1.50);
-        const flagH    = Math.round(rowH * 0.70);
-        const fontSize = Math.max(10, Math.round(rowH * 0.46));
-
-        const rowBg = [
-            "rgba(212,160,23,0.25)",   // Gold
-            "rgba(70,90,170,0.22)",    // Blue
-            "rgba(70,90,170,0.22)",    // Blue
+        const rowBg   = [
+            "rgba(212,160,23,0.22)",
+            "rgba(180,180,180,0.14)",
+            "rgba(180,100,40,0.14)",
         ];
         const rankCol = ["#D4A017", "#AAAAAA", "#C46228"];
 
         ctx.save();
 
-        ctx.fillStyle = "rgba(10,12,28,0.88)";
+        // Panel background
+        ctx.fillStyle = "rgba(10,12,28,0.85)";
         ctx.beginPath();
         ctx.roundRect(x, y, width, totalH, 5);
         ctx.fill();
@@ -31,29 +33,56 @@ export default class LeaderboardRenderer {
             const ry   = y + i * rowH;
             const midY = ry + rowH / 2;
 
+            // Row tint
             ctx.fillStyle = rowBg[i] ?? "rgba(255,255,255,0.04)";
             ctx.beginPath();
             ctx.roundRect(rx, ry, width, rowH - 1, 3);
             ctx.fill();
 
-            // Rank
+            // Rank number
             ctx.fillStyle    = rankCol[i] ?? "rgba(255,255,255,0.55)";
             ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "left";
             ctx.textBaseline = "middle";
-            const medals = ["🥇", "🥈", "🥉"];
-
-ctx.fillText(
-    medals[i] ?? `${i + 1}.`,
-    rx + padL,
-    midY
-);
+            ctx.fillText(`${i + 1}°`, rx + padL, midY);
 
             const rankW = ctx.measureText(`${i + 1}°`).width;
-            const flagX = rx + padL + rankW + 6;
+            const flagX = rx + padL + rankW + 8;
             const flagY = ry + (rowH - flagH) / 2;
 
-            // Flag
+            // ── Placeholder row (no winner yet) ──────────────────────────
+            if (!entry) {
+                const dashColor = "rgba(255,255,255,0.22)";
+                ctx.strokeStyle = dashColor;
+                ctx.lineWidth   = 1;
+                ctx.beginPath();
+                ctx.roundRect(flagX, flagY, flagW, flagH, 2);
+                ctx.stroke();
+
+                ctx.fillStyle    = dashColor;
+                ctx.font         = `bold ${fontSize}px Arial`;
+                ctx.textAlign    = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("—", flagX + flagW / 2, midY);
+
+                ctx.textAlign = "left";
+                ctx.fillText("—", flagX + flagW + 10, midY);
+
+                ctx.textAlign = "right";
+                ctx.fillText("—", rx + width - padL, midY);
+
+                if (i < maxRows - 1) {
+                    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+                    ctx.lineWidth   = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(rx + padL, ry + rowH);
+                    ctx.lineTo(rx + width - padL, ry + rowH);
+                    ctx.stroke();
+                }
+                return;
+            }
+
+            // Flag image
             if (entry.image && entry.image.complete) {
                 ctx.save();
                 ctx.beginPath();
@@ -69,19 +98,17 @@ ctx.fillText(
                 ctx.stroke();
             }
 
-            // Name — truncates before it collides with the win count
-            const nameX    = flagX + flagW + Math.round(rowH * 0.3);
-            ctx.font       = `bold ${fontSize}px Arial`;
-            const winsText = `${entry.wins} WIN${entry.wins !== 1 ? "S" : ""}`;
-            const winsW    = ctx.measureText(winsText).width;
-            const maxNameW = width - (nameX - rx) - winsW - padL * 3;
+            // Country name
+            const nameX    = flagX + flagW + 10;
+            const maxNameW = width - (nameX - rx) - 80;
 
             ctx.fillStyle    = "#FFFFFF";
+            ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "left";
             ctx.textBaseline = "middle";
 
             let name = entry.name;
-            while (ctx.measureText(name).width > maxNameW && name.length > 2) {
+            while (ctx.measureText(name).width > maxNameW && name.length > 3) {
                 name = name.slice(0, -1);
             }
             if (name !== entry.name) name += "…";
@@ -89,13 +116,18 @@ ctx.fillText(
 
             // Win count
             ctx.fillStyle    = "#FFC44D";
+            ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "right";
             ctx.textBaseline = "middle";
-            ctx.fillText(winsText, rx + width - padL, midY);
+            ctx.fillText(
+                `${entry.wins} WIN${entry.wins !== 1 ? "S" : ""}`,
+                rx + width - padL,
+                midY
+            );
 
             // Row divider
-            if (i < visible.length - 1) {
-                ctx.strokeStyle = "rgba(255,255,255,0.08)";
+            if (i < maxRows - 1) {
+                ctx.strokeStyle = "rgba(255,255,255,0.09)";
                 ctx.lineWidth   = 1;
                 ctx.beginPath();
                 ctx.moveTo(rx + padL, ry + rowH);
@@ -104,7 +136,8 @@ ctx.fillText(
             }
         });
 
-        ctx.strokeStyle = "rgba(255,200,80,0.20)";
+        // Outer border
+        ctx.strokeStyle = "rgba(255,200,80,0.22)";
         ctx.lineWidth   = 1;
         ctx.beginPath();
         ctx.roundRect(x, y, width, totalH, 5);
