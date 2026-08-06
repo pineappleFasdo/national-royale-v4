@@ -1,14 +1,28 @@
+// ──────────────────────────────────────────────────────────────────────────────
+// WinnerManager.js
+//
+// Tracks the winner of each round and persists win counts in localStorage.
+//
+// IMPORTANT FIX: the previous version stored the live HTMLImageElement object
+// in localStorage. JSON.stringify turns it into "{}", so on reload the image
+// was always null and flags in the leaderboard never rendered.  Now we store
+// the image src string and recreate the Image on demand.
+// ──────────────────────────────────────────────────────────────────────────────
+
 export default class WinnerManager {
 
     constructor() {
-        this.winner  = null;
-        this.onWin   = null;
+        this.winner = null;
+        this.onWin  = null;
 
-        // Persistent across rounds — keyed by country code
-        this._wins   = this._loadWins();
+        // Persistent win records: { [countryCode]: { name, imageSrc, wins } }
+        this._wins  = this._loadWins();
+
+        // Cache of reconstructed Image objects so we don't re-create each frame
+        this._imageCache = {};
     }
 
-    // ── Persistence helpers ───────────────────────────────────────────
+    // ── Persistence ───────────────────────────────────────────────────────────
 
     _loadWins() {
         try {
@@ -22,27 +36,49 @@ export default class WinnerManager {
     _saveWins() {
         try {
             localStorage.setItem("flagBattle_wins", JSON.stringify(this._wins));
-        } catch { /* storage blocked */ }
+        } catch { /* quota or private-mode block – silently ignore */ }
     }
 
-    /** Returns sorted leaderboard array:
-     *  [{ code, name, image, wins }, ...] descending */
+    // ── Image reconstruction ───────────────────────────────────────────────────
+
+    _getImage(code, imageSrc) {
+        if (!imageSrc) return null;
+
+        // Reuse cached Image if already built
+        if (this._imageCache[code]) return this._imageCache[code];
+
+        // Accept both a src string and a live HTMLImageElement
+        if (typeof imageSrc === "string") {
+            const img     = new Image();
+            img.src       = imageSrc;
+            this._imageCache[code] = img;
+            return img;
+        }
+
+        // It's already an HTMLImageElement (first win in session – not yet persisted)
+        this._imageCache[code] = imageSrc;
+        return imageSrc;
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /** Sorted descending by win count – ready for LeaderboardRenderer */
     getLeaderboard() {
         return Object.entries(this._wins)
             .map(([code, entry]) => ({
                 code,
                 name  : entry.name,
-                image : entry.image,
                 wins  : entry.wins,
+                image : this._getImage(code, entry.imageSrc),
             }))
             .sort((a, b) => b.wins - a.wins);
     }
 
-    // ── Game logic ────────────────────────────────────────────────────
+    // ── Game loop ─────────────────────────────────────────────────────────────
 
     update(flagManager) {
-        if (this.winner) return;
-        if (!flagManager?.flags) return;
+        if (this.winner)            return;
+        if (!flagManager?.flags)    return;
 
         const remaining = flagManager.flags;
         if (remaining.length !== 1) return;
@@ -50,13 +86,17 @@ export default class WinnerManager {
         const flag = remaining[0];
         this.winner = flag;
 
-        // Record the win
         const { code, name, image } = flag.country;
+
         if (!this._wins[code]) {
-            this._wins[code] = { name, image, wins: 0 };
+            this._wins[code] = { name, imageSrc: image?.src ?? null, wins: 0 };
         }
+
         this._wins[code].wins++;
         this._saveWins();
+
+        // Prime the image cache with the live element we already have
+        if (image) this._imageCache[code] = image;
 
         if (this.onWin) this.onWin(flag);
     }

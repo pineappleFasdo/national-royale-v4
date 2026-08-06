@@ -1,59 +1,59 @@
 export default class LeaderboardRenderer {
 
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {Array}  rows   – from WinnerManager.getLeaderboard()
-     * @param {number} x      – left edge of the panel
-     * @param {number} y      – top edge of the panel
-     * @param {number} width  – panel width
-     * @param {number} maxRows – how many rows to show (default 5)
-     */
-    draw(ctx, rows, x, y, width, maxRows = 5) {
+    draw(ctx, rows, x, y, width, rowH = 26, maxRows = 5) {
 
         if (!rows || rows.length === 0) return;
 
-        const rowH      = 28;
-        const padLeft   = 10;
-        const flagW     = 28;
-        const flagH     = 19;
-        const fontSize  = 13;
-        const visible   = rows.slice(0, maxRows);
-        const totalH    = rowH * visible.length;
+        const visible  = rows.slice(0, maxRows);
+        const totalH   = rowH * visible.length;
+        const padL     = Math.round(rowH * 0.35);
+        const flagW    = Math.round(rowH * 1.50);
+        const flagH    = Math.round(rowH * 0.70);
+        const fontSize = Math.max(10, Math.round(rowH * 0.46));
+
+        const rowBg = [
+            "rgba(212,160,23,0.25)",   // Gold
+            "rgba(70,90,170,0.22)",    // Blue
+            "rgba(70,90,170,0.22)",    // Blue
+        ];
+        const rankCol = ["#D4A017", "#AAAAAA", "#C46228"];
 
         ctx.save();
 
+        ctx.fillStyle = "rgba(10,12,28,0.88)";
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, totalH, 5);
+        ctx.fill();
+
         visible.forEach((entry, i) => {
 
-            const rx = x;
-            const ry = y + i * rowH;
+            const rx   = x;
+            const ry   = y + i * rowH;
+            const midY = ry + rowH / 2;
 
-            // ── Row background ─────────────────────────────────────
-            // Highlight top-3 slightly
-            if (i === 0)      ctx.fillStyle = "rgba(212,160,23,0.18)";  // gold tint
-            else if (i === 1) ctx.fillStyle = "rgba(180,180,180,0.12)"; // silver tint
-            else if (i === 2) ctx.fillStyle = "rgba(180,100,40,0.12)";  // bronze tint
-            else              ctx.fillStyle = "rgba(255,255,255,0.04)";
-
+            ctx.fillStyle = rowBg[i] ?? "rgba(255,255,255,0.04)";
             ctx.beginPath();
-            ctx.roundRect(rx, ry, width, rowH - 2, 3);
+            ctx.roundRect(rx, ry, width, rowH - 1, 3);
             ctx.fill();
 
-            // ── Rank badge ─────────────────────────────────────────
-            const rankColors = ["#D4A017", "#A8A8A8", "#C46228"];
-            ctx.fillStyle = rankColors[i] ?? "rgba(255,255,255,0.25)";
-            ctx.font      = `bold ${fontSize}px Arial`;
+            // Rank
+            ctx.fillStyle    = rankCol[i] ?? "rgba(255,255,255,0.55)";
+            ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText(
-                `${i + 1}°`,
-                rx + padLeft,
-                ry + rowH / 2
-            );
+            const medals = ["🥇", "🥈", "🥉"];
 
-            // ── Flag image ─────────────────────────────────────────
-            const flagX = rx + padLeft + 28;
+ctx.fillText(
+    medals[i] ?? `${i + 1}.`,
+    rx + padL,
+    midY
+);
+
+            const rankW = ctx.measureText(`${i + 1}°`).width;
+            const flagX = rx + padL + rankW + 6;
             const flagY = ry + (rowH - flagH) / 2;
 
+            // Flag
             if (entry.image && entry.image.complete) {
                 ctx.save();
                 ctx.beginPath();
@@ -62,46 +62,49 @@ export default class LeaderboardRenderer {
                 ctx.drawImage(entry.image, flagX, flagY, flagW, flagH);
                 ctx.restore();
 
-                // flag border
-                ctx.strokeStyle = "rgba(255,255,255,0.20)";
-                ctx.lineWidth   = 1;
+                ctx.strokeStyle = "rgba(255,255,255,0.25)";
+                ctx.lineWidth   = 0.8;
                 ctx.beginPath();
                 ctx.roundRect(flagX, flagY, flagW, flagH, 2);
                 ctx.stroke();
             }
 
-            // ── Country name ───────────────────────────────────────
+            // Name — truncates before it collides with the win count
+            const nameX    = flagX + flagW + Math.round(rowH * 0.3);
+            ctx.font       = `bold ${fontSize}px Arial`;
+            const winsText = `${entry.wins} WIN${entry.wins !== 1 ? "S" : ""}`;
+            const winsW    = ctx.measureText(winsText).width;
+            const maxNameW = width - (nameX - rx) - winsW - padL * 3;
+
             ctx.fillStyle    = "#FFFFFF";
-            ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText(
-                entry.name,
-                flagX + flagW + 10,
-                ry + rowH / 2,
-            );
 
-            // ── Win count (right-aligned) ──────────────────────────
+            let name = entry.name;
+            while (ctx.measureText(name).width > maxNameW && name.length > 2) {
+                name = name.slice(0, -1);
+            }
+            if (name !== entry.name) name += "…";
+            ctx.fillText(name, nameX, midY);
+
+            // Win count
             ctx.fillStyle    = "#FFC44D";
-            ctx.font         = `bold ${fontSize}px Arial`;
             ctx.textAlign    = "right";
-            ctx.fillText(
-                `${entry.wins} WIN${entry.wins !== 1 ? "S" : ""}`,
-                rx + width - padLeft,
-                ry + rowH / 2
-            );
+            ctx.textBaseline = "middle";
+            ctx.fillText(winsText, rx + width - padL, midY);
 
-            // ── Row divider ────────────────────────────────────────
-            ctx.strokeStyle = "rgba(255,255,255,0.06)";
-            ctx.lineWidth   = 1;
-            ctx.beginPath();
-            ctx.moveTo(rx, ry + rowH - 1);
-            ctx.lineTo(rx + width, ry + rowH - 1);
-            ctx.stroke();
+            // Row divider
+            if (i < visible.length - 1) {
+                ctx.strokeStyle = "rgba(255,255,255,0.08)";
+                ctx.lineWidth   = 1;
+                ctx.beginPath();
+                ctx.moveTo(rx + padL, ry + rowH);
+                ctx.lineTo(rx + width - padL, ry + rowH);
+                ctx.stroke();
+            }
         });
 
-        // ── Outer border around whole table ───────────────────────────
-        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.strokeStyle = "rgba(255,200,80,0.20)";
         ctx.lineWidth   = 1;
         ctx.beginPath();
         ctx.roundRect(x, y, width, totalH, 5);

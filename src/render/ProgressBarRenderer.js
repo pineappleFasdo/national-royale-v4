@@ -1,127 +1,90 @@
 export default class ProgressBarRenderer {
 
-    draw(ctx, eliminatedFlags, total, x, y, width) {
+    draw(ctx, eliminatedFlags, total, centerX, y, width, barHeight = 18) {
 
         const eliminated = eliminatedFlags.length;
-        const alive = total - eliminated;
+        const alive      = total - eliminated;
+        const fraction   = total > 0 ? alive / total : 0;
 
-        const barWidth = width;
-        const barHeight = 18;
-        const barX = x - barWidth / 2;
+        const barX = centerX - width / 2;
         const barY = y;
-
-        const fraction = total > 0 ? alive / total : 0;
+        const r    = Math.max(3, Math.round(barHeight * 0.28));
 
         ctx.save();
 
-        // Background
+        // Track
         ctx.fillStyle = "#111A36";
-        ctx.fillRect(
-            barX,
-            barY,
-            barWidth,
-            barHeight
-        );
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, width, barHeight, r);
+        ctx.fill();
 
-        // Fill color
-        let fillColor;
+        // Fill
+        if (fraction > 0) {
+            let fillColor;
+            if      (fraction > 0.65) fillColor = "#62B6FF";
+            else if (fraction > 0.35) fillColor = "#B38BC2";
+            else                      fillColor = "#D96E98";
 
-        if (fraction > 0.65) {
-
-            // Early game
-            fillColor = "#62B6FF";
-
-        } else if (fraction > 0.35) {
-
-            // Mid game
-            fillColor = "#B38BC2";
-
-        } else {
-
-            // Late game
-            fillColor = "#D96E98";
-
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(barX, barY, width, barHeight, r);
+            ctx.clip();
+            ctx.fillStyle = fillColor;
+            ctx.fillRect(barX, barY, width * fraction, barHeight);
+            ctx.restore();
         }
 
-        ctx.fillStyle = fillColor;
-
-        // Starts full and shrinks from RIGHT
-        ctx.fillRect(
-            barX,
-            barY,
-            barWidth * fraction,
-            barHeight
-        );
-
         // Border
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(
-            barX,
-            barY,
-            barWidth,
-            barHeight
-        );
+        ctx.strokeStyle = "rgba(255,255,255,0.10)";
+        ctx.lineWidth   = 1;
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, width, barHeight, r);
+        ctx.stroke();
 
-        // Center Text
-        ctx.fillStyle = "#FFFFFF";
-        ctx.font = "bold 14px Arial";
-        ctx.textAlign = "center";
+        // Centre text
+        const textSize = Math.max(9, Math.round(barHeight * 0.58));
+        ctx.fillStyle    = "#FFFFFF";
+        ctx.font         = `bold ${textSize}px Arial`;
+        ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
+        ctx.shadowColor  = "rgba(0,0,0,0.6)";
+        ctx.shadowBlur   = 3;
+        ctx.fillText(`${alive} / ${total} COUNTRIES`, centerX, barY + barHeight / 2);
+        ctx.shadowBlur = 0;
 
-        ctx.fillText(
-            `${alive} / ${total} COUNTRIES`,
-            barX + barWidth / 2,
-            barY + barHeight / 2
-        );
-
-        // Latest eliminated flag
+        // Last-eliminated flag chip
         if (eliminated > 0) {
+            const img = eliminatedFlags[eliminated - 1]?.country?.image;
+            if (img && img.complete && img.naturalWidth > 0) {
+                const fH = Math.round(barHeight * 0.72);
+                const fW = Math.round(fH * 1.45);
+                const fX = barX + width - fW - 5;
+                const fY = barY + (barHeight - fH) / 2;
 
-            const last = eliminatedFlags[eliminated - 1];
-            const img = last?.country?.image;
+                ctx.save();
+                ctx.beginPath();
+               
+                ctx.clip();
+                ctx.drawImage(img, fX, fY, fW, fH);
+                ctx.restore();
 
-            if (img && img.complete) {
-
-                const flagHeight = 14;
-                const flagWidth = 20;
-
-                const flagX =
-                    barX +
-                    barWidth -
-                    flagWidth -
-                    6;
-
-                const flagY =
-                    barY +
-                    (barHeight - flagHeight) / 2;
-
-                ctx.drawImage(
-                    img,
-                    flagX,
-                    flagY,
-                    flagWidth,
-                    flagHeight
-                );
-
+                ctx.strokeStyle = "rgba(255,255,255,0.30)";
+                ctx.lineWidth   = 1;
+                ctx.beginPath();
+                
+                ctx.stroke();
             }
-
         }
 
         ctx.restore();
 
-        // ELIMINATED text
-        ctx.fillStyle = "#00CFEA";
-        ctx.font = "bold 13px Arial";
-        ctx.textAlign = "center";
+        // "ELIMINATED" caption
+        ctx.save();
+        ctx.fillStyle    = "#00CFEA";
+        ctx.font         = `bold ${Math.max(9, Math.round(barHeight * 0.55))}px Arial`;
+        ctx.textAlign    = "center";
         ctx.textBaseline = "top";
-
-        ctx.fillText(
-            "ELIMINATED",
-            x,
-            barY + barHeight + 6
-        );
-
+        ctx.fillText("ELIMINATED", centerX, barY + barHeight + 4);
+        ctx.restore();
     }
-
 }

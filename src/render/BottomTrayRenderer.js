@@ -1,93 +1,86 @@
 export default class BottomTrayRenderer {
-    draw(ctx, eliminated, canvasWidth, canvasHeight) {
-        const trayHeight = 100;
-        const padding = 6;
+
+    draw(ctx, eliminated, canvasWidth, canvasHeight, trayHeight = 80) {
+
+        const padding = 5;
         const trayTop = canvasHeight - trayHeight;
 
         // Background
         const gradient = ctx.createLinearGradient(0, trayTop, 0, canvasHeight);
-        gradient.addColorStop(0, 'rgba(20,20,20,0.95)');
-        gradient.addColorStop(1, 'rgba(10,10,10,1)');
+        gradient.addColorStop(0, "rgba(18,18,28,0.97)");
+        gradient.addColorStop(1, "rgba(8,8,14,1)");
         ctx.fillStyle = gradient;
         ctx.fillRect(0, trayTop, canvasWidth, trayHeight);
 
-        // Border
-        ctx.shadowColor = "rgba(255,255,255,0.05)";
-        ctx.shadowBlur = 3;
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.lineWidth   = 1;
         ctx.beginPath();
         ctx.moveTo(0, trayTop);
         ctx.lineTo(canvasWidth, trayTop);
         ctx.stroke();
-        ctx.shadowBlur = 0;
 
         if (eliminated.length === 0) return;
 
-        const availableWidth = canvasWidth - padding * 2;
-        const availableHeight = trayHeight - padding * 2;
+        const availW = canvasWidth - padding * 2;
+        const availH = trayHeight  - padding * 2;
 
-        // Determine flag size to fit all flags
-        // We want as many columns as possible, but flags must be at least 6px wide
-        const aspectRatio = 1.4;
-        let bestSize = { height: 0, width: 0, cols: 0, rows: 0 };
+        const aspect = 1.43;
+        const gapX   = 2;
+        const gapY   = 2;
 
-        // Try sizes from 6px to 40px height
-        for (let h = 6; h <= 40; h += 1) {
-            const w = h * aspectRatio;
-            const cols = Math.floor(availableWidth / (w + 2)); // 2px spacing
-            if (cols < 1) continue;
-            const rows = Math.ceil(eliminated.length / cols);
-            const requiredHeight = rows * (h + 2) - 2;
-            if (requiredHeight <= availableHeight) {
-                // This size fits, save it (we want largest that fits)
-                bestSize = { height: h, width: w, cols, rows };
+        // Find largest flag height that still fits all eliminated flags
+        let flagH = 6;
+        for (let h = 6; h <= availH; h++) {
+            const w    = Math.round(h * aspect);
+            const cols = Math.floor((availW + gapX) / (w + gapX));
+            if (cols < 1) break;
+            const rows   = Math.ceil(eliminated.length / cols);
+            const totalH = rows * (h + gapY) - gapY;
+            if (totalH <= availH) {
+                flagH = h;
             } else {
-                // If it doesn't fit, we can't go larger
                 break;
             }
         }
 
-        // If no size fits (shouldn't happen with h=6), force smallest
-        if (bestSize.height === 0) {
-            const h = 6;
-            const w = h * aspectRatio;
-            const cols = Math.floor(availableWidth / (w + 2));
-            const rows = Math.ceil(eliminated.length / cols);
-            bestSize = { height: h, width: w, cols, rows };
-        }
+        const flagW = Math.round(flagH * aspect);
+        const cols  = Math.max(1, Math.floor((availW + gapX) / (flagW + gapX)));
+        const rows  = Math.ceil(eliminated.length / cols);
 
-        const { height: flagHeight, width: flagWidth, cols, rows } = bestSize;
-        const spacingX = 2;
-        const spacingY = 2;
+        const gridH  = rows * (flagH + gapY) - gapY;
+        const startY = trayTop + padding + Math.max(0, (availH - gridH) / 2);
 
-        // Center the grid vertically in the tray
-        const totalGridHeight = rows * (flagHeight + spacingY) - spacingY;
-        const startY = trayTop + padding + (availableHeight - totalGridHeight) / 2;
-
-        // Draw flags in grid
         for (let i = 0; i < eliminated.length; i++) {
-            const flag = eliminated[i];
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const x = padding + col * (flagWidth + spacingX);
-            const y = startY + row * (flagHeight + spacingY);
 
-            if (flag.country.image && flag.country.image.complete) {
+            const flag = eliminated[i];
+            const col  = i % cols;
+            const row  = Math.floor(i / cols);
+
+            const fx = padding + col * (flagW + gapX);
+            const fy = startY  + row * (flagH + gapY);
+
+            const img = flag.country?.image;
+
+            if (img && img.complete && img.naturalWidth > 0) {
                 ctx.save();
-                ctx.shadowColor = "rgba(0,0,0,0.5)";
-                ctx.shadowBlur = 2;
-                ctx.shadowOffsetY = 1;
-                ctx.drawImage(flag.country.image, x, y, flagWidth, flagHeight);
+                if (flagH >= 10) {
+                    ctx.beginPath();
+                    ctx.roundRect(fx, fy, flagW, flagH, Math.max(1, flagH * 0.08));
+                    ctx.clip();
+                }
+                ctx.drawImage(img, fx, fy, flagW, flagH);
                 ctx.restore();
-                // Thin border
-                ctx.strokeStyle = "rgba(255,255,255,0.1)";
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(x, y, flagWidth, flagHeight);
+
+                if (flagH >= 8) {
+                    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+                    ctx.lineWidth   = 0.5;
+                    ctx.strokeRect(fx, fy, flagW, flagH);
+                }
+
+            } else {
+                ctx.fillStyle = "#223";
+                ctx.fillRect(fx, fy, flagW, flagH);
             }
         }
-
-        // Optional: If there are so many flags that even 6px height overflows, we'll just let them be clipped
-        // (but with 201 flags and 100px height, 6px should fit comfortably)
     }
 }
