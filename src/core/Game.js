@@ -14,6 +14,7 @@ import WinnerManager       from "../managers/WinnerManager";
 import WinnerRender        from "../render/WinnerRenderer";
 import Confetti            from "../effects/Confetti";
 import AudioManager        from "../audio/AudioManager";
+import CommentarySystem    from "../audio/CommentarySystem";
 import LeaderboardRenderer from "../render/LeaderboardRenderer";
 import EventManager        from "../events/EventManager";
 import TrayLauncher        from "../effects/TrayLauncher";
@@ -50,6 +51,7 @@ export default class Game {
         this.winnerRender  = new WinnerRender();
         this.confetti      = new Confetti();
         this.audio         = new AudioManager();
+        this.commentary    = new CommentarySystem(this.audio);
 
         this.gameState             = "PLAYING";
         this.winnerDisplayTime     = 0;
@@ -77,7 +79,7 @@ export default class Game {
         this.physics = new PhysicsWorld(width, height);
         Matter.Events.on(this.physics.engine, "collisionStart", (event) => {
 
-            const isPlaying   = this.gameState === "PLAYING";
+            const isPlaying  = this.gameState === "PLAYING";
             const isCountdown = this.gameState === "COUNTDOWN";
 
             if (!isPlaying && !isCountdown) return;
@@ -90,10 +92,13 @@ export default class Game {
                 const isWall = (l) => l === "arenaWall";
 
                 if (isFlag(labelA) && isFlag(labelB)) {
+                    // Flag ↔ Flag: play thud during both COUNTDOWN and PLAYING
                     this.audio.playCollision("flag");
                     break;
                 }
                 if (isPlaying && (isFlag(labelA) || isFlag(labelB)) && (isWall(labelA) || isWall(labelB))) {
+                    // Flag ↔ Wall: only during PLAYING — walls rotate constantly
+                    // during countdown and would flood the soundscape
                     this.audio.playCollision("wall");
                     break;
                 }
@@ -145,6 +150,9 @@ export default class Game {
         this.winnerDisplayTime = Date.now();
 
         this.eventManager.end(this._eventCtx());
+
+        // Silence any in-progress commentary so it doesn't clash with the announcement
+        this.commentary.silence();
 
         this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
         this.audio.playWinner();
@@ -223,6 +231,7 @@ export default class Game {
 
         // Play the "3" tick immediately when the countdown first appears
         this.audio.resetMilestones();
+        this.commentary.silence();   // don't talk over the 3-2-1 countdown
         this.audio.playCountdown(3);
 
         this.restartTimer = setInterval(() => {
@@ -306,6 +315,9 @@ export default class Game {
                 this.arena.setRemainingFlags(countAfter);
                 this.drain.update();
                 this.drain.applyDrainForce(this.flagManager.flags);
+
+                // Periodic ambient commentary — silenced automatically outside PLAYING
+                this.commentary.update(countAfter, this.totalCountries);
             }
         }
 

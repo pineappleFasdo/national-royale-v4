@@ -219,16 +219,47 @@ export default class AudioManager {
         this._milestonesHit.clear();
     }
 
-    /** Web Speech API — "India wins!" etc. */
+    /** Web Speech API — "India wins!" etc. High-priority, cancels anything queued. */
     speak(text) {
         if (!("speechSynthesis" in window)) return;
 
         speechSynthesis.cancel();
+        this._lastSpeakTime = Date.now();   // block commentary for 4 s after this
 
         const utt   = new SpeechSynthesisUtterance(text);
         utt.rate    = 0.92;
         utt.pitch   = 1.05;
         utt.volume  = 1.0;
+
+        const voices    = speechSynthesis.getVoices();
+        const preferred = voices.find(v =>
+            v.lang.startsWith("en") && /male|guy|david|mark|alex/i.test(v.name)
+        ) || voices.find(v => v.lang.startsWith("en"));
+
+        if (preferred) utt.voice = preferred;
+
+        speechSynthesis.speak(utt);
+    }
+
+    /**
+     * Low-priority ambient commentary — fires unless a high-priority speak()
+     * was called in the last 4 seconds. Slightly faster and quieter than the
+     * winner announcement voice.
+     */
+    speakCommentary(text) {
+        if (!("speechSynthesis" in window)) return;
+
+        // Guard against Chrome's sticky speechSynthesis.speaking bug by using
+        // a simple timestamp cooldown instead of the speaking flag.
+        const now = Date.now();
+        if (this._lastSpeakTime && now - this._lastSpeakTime < 4000) return;
+
+        speechSynthesis.cancel();   // clear any stale queue first
+
+        const utt   = new SpeechSynthesisUtterance(text);
+        utt.rate    = 1.05;
+        utt.pitch   = 1.00;
+        utt.volume  = 0.80;
 
         const voices    = speechSynthesis.getVoices();
         const preferred = voices.find(v =>
