@@ -13,6 +13,7 @@ import DrainSystem         from "./DrainSystem";
 import WinnerManager       from "../managers/WinnerManager";
 import WinnerRender        from "../render/WinnerRenderer";
 import Confetti            from "../effects/Confetti";
+import VisualFX            from "../effects/VisualFX";
 import AudioManager        from "../audio/AudioManager";
 import CommentarySystem    from "../audio/CommentarySystem";
 import LeaderboardRenderer from "../render/LeaderboardRenderer";
@@ -50,15 +51,16 @@ export default class Game {
         this.winnerManager = new WinnerManager();
         this.winnerRender  = new WinnerRender();
         this.confetti      = new Confetti();
+        this.fx            = new VisualFX();
         this.audio         = new AudioManager();
         this.commentary    = new CommentarySystem(this.audio);
 
-        this.gameState             = "PLAYING";
+        this.gameState             = "START_SCREEN";
         this.winnerDisplayTime     = 0;
         this.winnerDisplayDuration = 3500;
 
         this.nextEventTimer    = 0;
-        this.nextEventDuration = 150;   // ~2.5 s @ 60fps
+        this.nextEventDuration = 150;
 
         this.restartCountdown = 0;
         this.restartTimer     = null;
@@ -79,7 +81,7 @@ export default class Game {
         this.physics = new PhysicsWorld(width, height);
         Matter.Events.on(this.physics.engine, "collisionStart", (event) => {
 
-            const isPlaying  = this.gameState === "PLAYING";
+            const isPlaying   = this.gameState === "PLAYING";
             const isCountdown = this.gameState === "COUNTDOWN";
 
             if (!isPlaying && !isCountdown) return;
@@ -91,15 +93,17 @@ export default class Game {
                 const isFlag = (l) => l === "flag";
                 const isWall = (l) => l === "arenaWall";
 
+                const cx = (pair.bodyA.position.x + pair.bodyB.position.x) / 2;
+                const cy = (pair.bodyA.position.y + pair.bodyB.position.y) / 2;
+
                 if (isFlag(labelA) && isFlag(labelB)) {
-                    // Flag ↔ Flag: play thud during both COUNTDOWN and PLAYING
                     this.audio.playCollision("flag");
+                    this.fx.spark(cx, cy, 6, "#FFE566");
                     break;
                 }
                 if (isPlaying && (isFlag(labelA) || isFlag(labelB)) && (isWall(labelA) || isWall(labelB))) {
-                    // Flag ↔ Wall: only during PLAYING — walls rotate constantly
-                    // during countdown and would flood the soundscape
                     this.audio.playCollision("wall");
+                    this.fx.spark(cx, cy, 5, "#88CCFF");
                     break;
                 }
             }
@@ -124,27 +128,19 @@ export default class Game {
             this.layout.arenaX, this.layout.arenaY, spawnRadius, this.totalCountries
         );
 
-        // Store spawn positions so _beginCountdown() can pick them up,
-        // just like it does for every round after the first.
         this._nextSpawnPositions = positions;
         this._nextFlagW = Math.max(6, spacing * 0.82);
         this._nextFlagH = Math.max(4, this._nextFlagW * 0.70);
 
-        // Pick the first event before the countdown so it's ready to display.
         this.eventManager.pick();
 
-        // Wire the win callback before _beginCountdown() fires.
         this.winnerManager.onWin = (winner) => this.handleWinner(winner);
 
-        // Phase 3: give WinnerManager a direct reference to the renderer so it
-        // can call markDirty() immediately after a win is recorded — triggering
-        // the bump animation and a deferred re-sort — without Game needing to
-        // thread the result through every frame.
         this.winnerManager.leaderboardRenderer = this.leaderboardRenderer;
 
-        // Route the first round through the same countdown flow as all later
-        // rounds — this is what shows the event name on first start.
-        this._beginCountdown();
+        if (this.gameState !== "START_SCREEN") {
+            this._beginCountdown();
+        }
     }
 
     // ── State transitions ────────────────────────────────────────────────────
@@ -157,30 +153,21 @@ export default class Game {
 
         this.eventManager.end(this._eventCtx());
 
-        // Silence any in-progress commentary so it doesn't clash with the announcement
-        this.commentary.silence();
-
         const isTie = winner?.isTie === true;
 
         if (isTie && !winner.isSilent) {
-            // Two or more flags drained simultaneously — it's a tie.
-            // Shorter display time for ties since there's no flag to celebrate.
-            this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
-            this.audio.playWinner();   // same fanfare — still exciting
+            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.4, 260);
+            this.audio.playWinner();
             const names = (winner.countries ?? []).map(c => c.name).join(" and ");
             if (names) this.audio.speak(`It's a tie between ${names}!`);
         } else if (!isTie) {
-            // Normal single winner
-            this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
+            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.36, 320);
             this.audio.playWinner();
             this.audio.speak(`${winner.country.name} wins!`);
         }
-        // isSilent ties (no elimination history) skip audio and confetti —
-        // they restart immediately so the player barely notices.
 
         this.eventManager.pick();
 
-        // Shorten the display for a silent restart; normal timing otherwise
         const displayDuration = (isTie && winner.isSilent)
             ? 500
             : this.winnerDisplayDuration;
@@ -200,30 +187,77 @@ export default class Game {
         this._nextFlagW = Math.max(6, spacing * 0.82);
         this._nextFlagH = Math.max(4, this._nextFlagW * 0.70);
 
+        this._launchEliminated = this.eliminationManager
+            ? [...this.eliminationManager.eliminated]
+            : [];
+
         this._clearAllFlags();
 
-        const eliminated = this.eliminationManager ? [...this.eliminationManager.eliminated] : [];
+        const launchFlags = countries.map(c => ({ country: c }));
         this.trayLauncher.startLaunch(
-            eliminated,
+            launchFlags,
             this.layout.trayTop,
             this.canvas.width,
             this.layout.arenaX,
             this.layout.arenaY,
             this.layout.arenaRadius,
-            this._nextSpawnPositions
+            this._nextSpawnPositions,
+            this._nextFlagW,
+            this._nextFlagH
         );
+
+        this.nextEventDuration = 130;
+    }
+
+    // ── Restart system ───────────────────────────────────────────────────────
+
+    startGame() {
+        this._doReset();
+    }
+
+    _doReset() {
+        if (this.restartTimer) {
+            clearTimeout(this.restartTimer);
+            clearInterval(this.restartTimer);
+            this.restartTimer = null;
+        }
+
+        if (this.gameState === "PLAYING" && this.arena) {
+            this.eventManager.end(this._eventCtx());
+        }
+
+        this.winnerManager.clearWins();
+        this.winnerManager.winner = null;
+        this.leaderboardRenderer.reset();
+
+        this.trayLauncher.cancel();
+
+        this._clearAllFlags();
+
+        this.confetti.particles = [];
+        this.fx.reset();
+        this.nextEventTimer = 0;
+
+        const spawnRadius = this.layout.arenaRadius - 20;
+        const { positions, spacing } = SpawnManager.generate(
+            this.layout.arenaX, this.layout.arenaY, spawnRadius, this.totalCountries
+        );
+        this._nextSpawnPositions = positions;
+        this._nextFlagW = Math.max(6, spacing * 0.82);
+        this._nextFlagH = Math.max(4, this._nextFlagW * 0.70);
+
+        this.eventManager.pick();
+
+        this._beginNextEvent();
     }
 
     _beginCountdown() {
-        this.gameState        = "COUNTDOWN";
-        this.restartCountdown = 3;
+        this.gameState           = "COUNTDOWN";
+        this.restartCountdown    = 3;
+        this._countdownTickStart = performance.now();
 
-        // Reset arena radius in case ShrinkingArena left it smaller than full size
-        this.arena.radius     = this.layout.arenaRadius;
-        // Keep arena walls fully closed during the countdown.
-        // Set introDuration very high so the arena never auto-transitions to
-        // STATE_OPENING on its own — _startPlaying() will force STATE_PLAYING instantly.
-        this.arena.state         = ArenaPhysics.STATE_INTRO;
+        this.arena.radius        = this.layout.arenaRadius;
+        this.arena.state          = ArenaPhysics.STATE_INTRO;
         this.arena.introTimer    = 0;
         this.arena.introDuration = 99999;
         this.arena.gapSize       = 0;
@@ -243,30 +277,27 @@ export default class Game {
         this.matchStartTime     = Date.now();
         this.lastRemainingCount = -1;
 
-        // Reset the outer-boundary snapshot so the elimination zone
-        // matches the freshly-restored arena radius each new round.
         if (this.eliminationManager) {
             this.eliminationManager.reset();
         }
 
         this.winnerManager.reset();
         this.confetti.particles = [];
+        this.fx.reset();
 
         this.arena._flagsRef = this.flagManager.flags;
 
-        // Play the "3" tick immediately when the countdown first appears
         this.audio.resetMilestones();
-        this.commentary.silence();   // don't talk over the 3-2-1 countdown
         this.audio.playCountdown(3);
 
         this.restartTimer = setInterval(() => {
             this.restartCountdown--;
+            this._countdownTickStart = performance.now();
             if (this.restartCountdown <= 0) {
                 clearInterval(this.restartTimer);
                 this.restartTimer = null;
                 this._startPlaying();
             } else {
-                // Play "2" and "1" ticks
                 this.audio.playCountdown(this.restartCountdown);
             }
         }, 1000);
@@ -274,9 +305,6 @@ export default class Game {
 
     _startPlaying() {
         this.gameState = "PLAYING";
-        // Open the arena INSTANTLY — skip the INTRO timer and OPENING animation.
-        // The 3-2-1 countdown in _drawCountdownOverlay is the only countdown the
-        // player sees; there is no separate "OPENING IN" phase any more.
         this.arena.state   = ArenaPhysics.STATE_PLAYING;
         this.arena.gapSize = this.arena.initialGapSize;
         this.arena.syncWalls();
@@ -304,12 +332,14 @@ export default class Game {
     // ── Update ────────────────────────────────────────────────────────────────
 
     update() {
+        if (this.gameState === "START_SCREEN") return;
+
         const state = this.gameState;
 
         if (state === "NEXT_EVENT") {
             this.nextEventTimer++;
             this.trayLauncher.update();
-            if (this.nextEventTimer >= this.nextEventDuration) {
+            if (this.trayLauncher.finished || this.nextEventTimer >= this.nextEventDuration) {
                 this._beginCountdown();
             }
         }
@@ -320,18 +350,16 @@ export default class Game {
         }
 
         if (state === "PLAYING") {
-            // PHASE 2 FIX: arena first so gap masks are set before Matter resolves
             this.arena.update();
             this.eventManager.update(this._eventCtx());
             this.physics.update();
-            this.flagManager.update();
+            this.flagManager.update(this.arena);
 
             if (!this.arena.isIntro) {
                 const countBefore = this.flagManager.flags.length;
                 this.eliminationManager.update(this.flagManager);
                 const countAfter  = this.flagManager.flags.length;
 
-                // Fire the pop/elimination sound once per frame that removes flags
                 if (countAfter < countBefore) {
                     this.audio.playElimination();
                     this.audio.playMilestone(countAfter, this.totalCountries);
@@ -340,16 +368,12 @@ export default class Game {
                 this.arena.setRemainingFlags(countAfter);
                 this.drain.update();
                 this.drain.applyDrainForce(this.flagManager.flags);
-
-                // Periodic ambient commentary — silenced automatically outside PLAYING
-                this.commentary.update(countAfter, this.totalCountries);
             }
         }
 
-        // Pass eliminationManager so WinnerManager can detect simultaneous
-        // exits (tie) when the flag count drops straight to 0 in one frame.
         this.winnerManager.update(this.flagManager, this.eliminationManager);
         this.confetti.update();
+        this.fx.update();
     }
 
     // ── Draw ──────────────────────────────────────────────────────────────────
@@ -361,18 +385,17 @@ export default class Game {
         ctx.fillStyle = "#111";
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Leaderboard — always drawn; renderer manages its own stable sorted list
-        // (updated via markDirty after each win) so we don't re-sort every frame.
+        if (this.gameState === "START_SCREEN") return;
+
         this.leaderboardRenderer.draw(
             ctx,
-            this.winnerManager.getLeaderboard(),   // passed for first-frame seeding only
+            this.winnerManager.getLeaderboard(),
             layout.lbX, layout.lbY, layout.lbW, layout.lbRowH, layout.lbRowCount
         );
 
         this.arenaRenderer.draw(ctx, this.arena);
         this.flagManager.draw(ctx);
 
-        // Tray-launcher arc animation (over arena, under overlays)
         this.trayLauncher.draw(ctx);
 
         if (this.gameState === "PLAYING") {
@@ -384,19 +407,35 @@ export default class Game {
             );
         }
 
-        this.bottomTrayRenderer.draw(
-            ctx,
-            this.eliminationManager?.eliminated ?? [],
-            this.canvas.width, this.canvas.height
-        );
+        if (this.gameState !== "NEXT_EVENT") {
+            this.bottomTrayRenderer.draw(
+                ctx,
+                this.eliminationManager?.eliminated ?? [],
+                this.canvas.width, this.canvas.height
+            );
+        } else {
+            this.bottomTrayRenderer.draw(
+                ctx,
+                [],
+                this.canvas.width, this.canvas.height
+            );
+        }
+
+        // Collision sparks only (no full-screen shake/flash)
+        this.fx.draw(ctx, this.canvas.width, this.canvas.height);
 
         this._drawCentralOverlay(ctx);
 
         if (this.gameState === "WINNER_SHOW" || this.gameState === "COUNTDOWN") {
+            const elapsed = Date.now() - this.winnerDisplayTime;
+            const animT   = this.gameState === "WINNER_SHOW"
+                ? Math.min(1, elapsed / 450)
+                : 1;
             this.winnerRender.draw(
                 ctx, this.winnerManager.winner,
                 this.canvas.width, this.canvas.height,
-                this.gameState === "COUNTDOWN"
+                this.gameState === "COUNTDOWN",
+                animT
             );
         }
 
@@ -414,41 +453,74 @@ export default class Game {
     // ── Overlay helpers ───────────────────────────────────────────────────────
 
     _drawCentralOverlay(ctx) {
-        // No central overlay text any more.
-        // The 3-2-1 countdown (_drawCountdownOverlay) is the sole signal to
-        // the viewer, and the arena opens instantly the moment it ends.
+        // no-op
     }
 
     _drawNextEventOverlay(ctx) {
         const ev    = this.eventManager;
         const cx    = this.canvas.width  / 2;
         const cy    = this.layout.arenaY;
-        const t     = Math.min(1, this.nextEventTimer / 15);
-        const alpha = t;
+        const total = this.nextEventDuration;
+        const timer = this.nextEventTimer;
+
+        let alpha = 1;
+        if (timer < 14) {
+            alpha = this._easeOut(timer / 14);
+        } else if (timer > total - 18) {
+            alpha = this._easeOut((total - timer) / 18);
+        }
+        const scale = 0.96 + 0.04 * Math.min(1, timer / 14);
 
         ctx.save();
         ctx.globalAlpha = alpha;
 
-        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillStyle = "rgba(0,0,0,0.42)";
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        ctx.translate(cx, cy);
+        ctx.scale(scale, scale);
+        ctx.translate(-cx, -cy);
+
+        const cardW = Math.min(this.canvas.width * 0.72, 420);
+        const cardH = Math.min(this.canvas.height * 0.28, 200);
+        const cardX = cx - cardW / 2;
+        const cardY = cy - cardH / 2;
+
+        ctx.fillStyle = "rgba(8, 10, 22, 0.92)";
         ctx.beginPath();
-        ctx.arc(cx, cy, this.layout.arenaRadius, 0, Math.PI * 2);
+        if (typeof ctx.roundRect === "function") {
+            ctx.roundRect(cardX, cardY, cardW, cardH, 16);
+        } else {
+            ctx.rect(cardX, cardY, cardW, cardH);
+        }
         ctx.fill();
+
+        ctx.strokeStyle = this._hexToRgba(ev.color, 0.55);
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor  = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur   = 20;
+        ctx.shadowColor  = "rgba(0,0,0,0.95)";
+        ctx.shadowBlur   = 12;
 
-        const titleSize = Math.min(this.canvas.width * 0.045, 36);
-ctx.font = `bold ${titleSize}px Arial`;
-        ctx.fillStyle = "#FFD700";
-        ctx.fillText("NEXT EVENT", cx, cy - 30);
+        const titleSize = Math.min(this.canvas.width * 0.028, 22);
+        ctx.font = `700 ${titleSize}px system-ui, Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,215,0,0.95)";
+        ctx.fillText("NEXT EVENT", cx, cy - cardH * 0.28);
 
-        const eventSize = Math.min(this.canvas.width * 0.065, 52);
-ctx.font = `bold ${eventSize}px Arial`;
+        const pulse = 1 + 0.04 * Math.sin(timer * 0.1);
+        const iconSize = Math.min(this.canvas.width * 0.08, 52) * pulse;
+        ctx.font = `${iconSize}px system-ui, Arial, sans-serif`;
+        ctx.shadowBlur = 20;
+        ctx.fillText(ev.icon, cx, cy - 4);
+
+        const eventSize = Math.min(this.canvas.width * 0.055, 42);
+        ctx.font = `900 ${eventSize}px system-ui, Arial, sans-serif`;
         ctx.fillStyle = ev.color;
-        ctx.shadowBlur = 28;
-        ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy + 32);
+        ctx.shadowColor = this._hexToRgba(ev.color, 0.5);
+        ctx.shadowBlur  = 22;
+        ctx.fillText(ev.name, cx, cy + cardH * 0.28);
 
         ctx.restore();
     }
@@ -458,39 +530,62 @@ ctx.font = `bold ${eventSize}px Arial`;
 
         const cx = this.canvas.width  / 2;
         const cy = this.layout.arenaY;
+        const ev = this.eventManager;
+
+        if (!this._countdownTickStart) this._countdownTickStart = performance.now();
+        const tickT = ((performance.now() - this._countdownTickStart) % 1000) / 1000;
+        const numScale = tickT < 0.2
+            ? 1 + 0.16 * (1 - tickT / 0.2)
+            : 1;
 
         ctx.save();
-
-        // Slightly larger dark circle so the big number has breathing room
-        ctx.fillStyle = "rgba(0,0,0,0.45)";
-        ctx.beginPath();
-        ctx.arc(cx, cy, this.layout.arenaRadius * 0.58, 0, Math.PI * 2);
-        ctx.fill();
-
-        const ev = this.eventManager;
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor  = "rgba(0,0,0,0.9)";
+        ctx.shadowColor  = "rgba(0,0,0,0.95)";
+        ctx.shadowBlur   = 14;
 
-        // Event icon + name
-        ctx.font = `bold ${Math.min(this.canvas.width * 0.025,20)}px Arial`;
+        const evSize = Math.min(this.canvas.width * 0.030, 24);
+        ctx.font = `700 ${evSize}px system-ui, Arial, sans-serif`;
         ctx.fillStyle = ev.color;
+        ctx.fillText(`${ev.icon}  ${ev.name}`, cx, cy - 110);
+
+        const labelSize = Math.min(this.canvas.width * 0.028, 22);
+        ctx.font = `600 ${labelSize}px system-ui, Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
         ctx.shadowBlur = 12;
-        ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy - 72);
+        ctx.fillText("STARTS IN", cx, cy - 72);
 
-        // "STARTS IN" label
-        ctx.font = `bold ${Math.min(this.canvas.width * 0.028,22)}px Arial`;
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.shadowBlur = 10;
-        ctx.fillText("STARTS IN", cx, cy - 40);
-
-        // Big countdown number — the centrepiece
-        ctx.font = `bold ${Math.min(this.canvas.width * 0.18,150)}px Arial`;
+        ctx.save();
+        ctx.translate(cx, cy + 20);
+        ctx.scale(numScale, numScale);
+        const numSize = Math.min(this.canvas.width * 0.17, 140);
+        ctx.font = `900 ${numSize}px system-ui, Arial, sans-serif`;
         ctx.fillStyle = "#FFD700";
-        ctx.shadowBlur = 32;
-        ctx.fillText(this.restartCountdown, cx, cy + 48);
+        ctx.shadowColor = "rgba(0,0,0,0.90)";
+        ctx.shadowBlur  = 24;
+        ctx.fillText(String(this.restartCountdown), 0, 0);
+        ctx.shadowColor = "rgba(255,215,0,0.40)";
+        ctx.shadowBlur  = 36;
+        ctx.fillText(String(this.restartCountdown), 0, 0);
+        ctx.restore();
 
         ctx.restore();
+    }
+
+    _easeOut(t) {
+        return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
+    }
+
+    _hexToRgba(color, alpha) {
+        if (!color || color[0] !== "#") return `rgba(255,215,0,${alpha})`;
+        const h = color.slice(1);
+        const full = h.length === 3
+            ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2]
+            : h;
+        const r = parseInt(full.slice(0, 2), 16);
+        const g = parseInt(full.slice(2, 4), 16);
+        const b = parseInt(full.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
     }
 
     // ── Main loop ─────────────────────────────────────────────────────────────

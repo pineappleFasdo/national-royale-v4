@@ -1,3 +1,5 @@
+// ArenaRenderer.js — ring + soft outer glow
+
 export default class ArenaRenderer {
 
     draw(ctx, arena) {
@@ -10,32 +12,50 @@ export default class ArenaRenderer {
         );
         ctx.rotate(arena.angle);
 
-        ctx.strokeStyle = "white";
-        ctx.lineWidth   = 3;
-        ctx.lineCap     = "round";
-
         const gapAngle = (arena.gapSize / arena.segmentCount) * Math.PI * 2;
 
-        if (arena._doubleHole) {
-            // Gap 1: 0 → gapAngle   |   Gap 2: π → π+gapAngle
-            // Draw the arc between the two gaps
-            ctx.beginPath();
-            ctx.arc(0, 0, arena.radius, gapAngle, Math.PI, false);
-            ctx.stroke();
-
-            // Draw the arc after gap 2 (wraps back to start of gap 1)
-            ctx.beginPath();
-            ctx.arc(0, 0, arena.radius, Math.PI + gapAngle, Math.PI * 2, false);
-            ctx.stroke();
-        } else {
-            // Single gap: draw everything except 0 → gapAngle
-            ctx.beginPath();
-            ctx.arc(0, 0, arena.radius, gapAngle, Math.PI * 2, false);
-            ctx.stroke();
-        }
-
+        // Soft outer glow (drawn first, under the ring)
+        ctx.save();
+        ctx.shadowColor = "rgba(120, 180, 255, 0.55)";
+        ctx.shadowBlur  = 18;
+        ctx.strokeStyle = "rgba(180, 210, 255, 0.35)";
+        ctx.lineWidth   = 8;
+        ctx.lineCap     = "round";
+        this._strokeRing(ctx, arena, gapAngle);
         ctx.restore();
 
+        // Main white ring
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth   = 3;
+        ctx.lineCap     = "round";
+        ctx.shadowColor = "rgba(255,255,255,0.40)";
+        ctx.shadowBlur  = 8;
+        this._strokeRing(ctx, arena, gapAngle);
+
+        // Inner thin highlight
+        ctx.shadowBlur  = 0;
+        ctx.strokeStyle = "rgba(200, 230, 255, 0.25)";
+        ctx.lineWidth   = 1.5;
+        this._strokeRing(ctx, arena, gapAngle, -1.5);
+
+        ctx.restore();
     }
 
+    _strokeRing(ctx, arena, gapAngle, radiusOffset = 0) {
+        const r = arena.radius + radiusOffset;
+
+        if (arena._doubleHole) {
+            ctx.beginPath();
+            ctx.arc(0, 0, r, gapAngle, Math.PI, false);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(0, 0, r, Math.PI + gapAngle, Math.PI * 2, false);
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.arc(0, 0, r, gapAngle, Math.PI * 2, false);
+            ctx.stroke();
+        }
+    }
 }

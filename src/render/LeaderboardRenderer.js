@@ -39,6 +39,14 @@ export default class LeaderboardRenderer {
      * @param {Array}  rows       - sorted leaderboard from WinnerManager.getLeaderboard()
      * @param {string} [winCode]  - ISO code of the flag that just won (triggers bump anim)
      */
+    /** Wipe display state — called on full game reset so no stale data lingers. */
+    reset() {
+        this._stableRows  = [];
+        this._pendingRows = null;
+        this._dirty       = false;
+        this._bumps       = new Map();
+    }
+
     markDirty(rows, winCode) {
         this._pendingRows = rows;
         this._dirty       = true;

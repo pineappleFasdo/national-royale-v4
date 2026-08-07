@@ -12,14 +12,15 @@ export default class ArenaPhysics {
         this.cy     = cy;
         this.radius = radius;
 
-        this.rotationSpeed = 0.022;
+        this.rotationSpeed = 0.024;
         this.angle         = 0;
 
         this.segmentCount = 96;
         this.thickness    = 20;
 
-        this.initialGapSize = 6;
-        this.maxGapSize     = 18;
+        // Slightly larger early gap → better elimination pacing
+        this.initialGapSize = 7;
+        this.maxGapSize     = 22;
         this.gapSize        = 0;
 
         this.state           = ArenaPhysics.STATE_INTRO;
@@ -42,7 +43,7 @@ export default class ArenaPhysics {
                 {
                     isStatic    : true,
                     angle       : segAngle,
-                    restitution : 1,
+                    restitution : 0.95,
                     friction    : 0,
                     label       : "arenaWall"
                 }
@@ -64,10 +65,14 @@ export default class ArenaPhysics {
         this.remainingFlags = count;
         if (this.state !== ArenaPhysics.STATE_PLAYING) return;
 
+        // Ease gap open faster in the first half of eliminations so
+        // matches don't crawl, then open further for the endgame.
         const eliminated = this.totalFlags - count;
         const t = Math.max(0, Math.min(1, eliminated / Math.max(1, this.totalFlags - 1)));
+        // ease-out: opens quicker early
+        const eased = 1 - Math.pow(1 - t, 1.6);
         this.gapSize = Math.round(
-            this.initialGapSize + (this.maxGapSize - this.initialGapSize) * t
+            this.initialGapSize + (this.maxGapSize - this.initialGapSize) * eased
         );
     }
 
@@ -80,12 +85,6 @@ export default class ArenaPhysics {
     }
 
 
-    /**
-     * Force-sync ALL wall collision masks immediately without waiting for update().
-     * Call this any time gapSize or state is changed outside the normal loop
-     * (e.g. on round reset) to prevent a one-frame ghost-gap that lets freshly-
-     * spawned flags leak through the wall.
-     */
     syncWalls() {
         const effectiveGap = (this.state === ArenaPhysics.STATE_PLAYING)
             ? this.gapSize
@@ -124,7 +123,7 @@ export default class ArenaPhysics {
 
         if (this.state === ArenaPhysics.STATE_INTRO) {
             this.introTimer++;
-            this.rotationSpeed = 0.022 + 0.010 * Math.sin(this.introTimer * 0.06);
+            this.rotationSpeed = 0.024 + 0.010 * Math.sin(this.introTimer * 0.06);
 
             if (this.introTimer >= this.introDuration) {
                 this.startOpening();
@@ -135,7 +134,7 @@ export default class ArenaPhysics {
             const t = Math.min(1, this.openingTimer / this.openingDuration);
             const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
             this.gapSize       = Math.round(this.initialGapSize * eased);
-            this.rotationSpeed = 0.022;
+            this.rotationSpeed = 0.024;
 
             if (this.openingTimer >= this.openingDuration) {
                 this.state   = ArenaPhysics.STATE_PLAYING;
@@ -143,7 +142,9 @@ export default class ArenaPhysics {
             }
 
         } else {
-            this.rotationSpeed = 0.022;
+            // Slightly faster spin late-game when few flags remain
+            const remainRatio = this.remainingFlags / Math.max(1, this.totalFlags);
+            this.rotationSpeed = 0.024 + (1 - remainRatio) * 0.012;
         }
 
         this.angle += this.rotationSpeed;

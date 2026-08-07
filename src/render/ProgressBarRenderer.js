@@ -44,7 +44,7 @@ export default class ProgressBarRenderer {
         // Centre text
         const textSize = Math.max(9, Math.round(barHeight * 0.58));
         ctx.fillStyle    = "#FFFFFF";
-        ctx.font         = `bold ${textSize}px Arial`;
+        ctx.font         = `bold ${textSize}px system-ui, Arial, sans-serif`;
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
         ctx.shadowColor  = "rgba(0,0,0,0.6)";
@@ -63,7 +63,7 @@ export default class ProgressBarRenderer {
 
                 ctx.save();
                 ctx.beginPath();
-               
+                ctx.roundRect(fX, fY, fW, fH, 2);
                 ctx.clip();
                 ctx.drawImage(img, fX, fY, fW, fH);
                 ctx.restore();
@@ -71,7 +71,7 @@ export default class ProgressBarRenderer {
                 ctx.strokeStyle = "rgba(255,255,255,0.30)";
                 ctx.lineWidth   = 1;
                 ctx.beginPath();
-                
+                ctx.roundRect(fX, fY, fW, fH, 2);
                 ctx.stroke();
             }
         }
@@ -81,7 +81,7 @@ export default class ProgressBarRenderer {
         // "ELIMINATED" caption
         ctx.save();
         ctx.fillStyle    = "#00CFEA";
-        ctx.font         = `bold ${Math.max(9, Math.round(barHeight * 0.55))}px Arial`;
+        ctx.font         = `bold ${Math.max(9, Math.round(barHeight * 0.55))}px system-ui, Arial, sans-serif`;
         ctx.textAlign    = "center";
         ctx.textBaseline = "top";
         ctx.fillText("ELIMINATED", centerX, barY + barHeight + 4);

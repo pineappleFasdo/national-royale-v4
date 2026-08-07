@@ -60,6 +60,12 @@ export default class WinnerManager {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /** Wipe all win records (used by full-game reset). */
+    clearWins() {
+        this._wins = {};
+        try { localStorage.removeItem("flagBattle_wins"); } catch { /* quota / private */ }
+    }
+
     /** Sorted descending by win count – ready for LeaderboardRenderer */
     getLeaderboard() {
         return Object.entries(this._wins)

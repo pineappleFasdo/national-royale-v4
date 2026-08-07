@@ -1,135 +1,169 @@
 // WinnerRenderer.js
-// Renders the winner splash OR a tie screen when multiple flags drained at once.
+// Phase 5 — clean winner splash & tie screen (no competing circles).
 
 export default class WinnerRender {
 
-    draw(ctx, winner, canvasWidth, canvasHeight, isCountdown = false) {
+    draw(ctx, winner, canvasWidth, canvasHeight, isCountdown = false, animT = 1) {
         if (!winner) return;
 
-        // ── Tie screen ────────────────────────────────────────────────────────
         if (winner.isTie) {
-            if (winner.isSilent) return;   // silent restart — don't render anything
-            this._drawTie(ctx, winner, canvasWidth, canvasHeight);
+            if (winner.isSilent) return;
+            this._drawTie(ctx, winner, canvasWidth, canvasHeight, animT);
             return;
         }
 
-        // ── Normal winner screen ──────────────────────────────────────────────
-        this._drawWinner(ctx, winner, canvasWidth, canvasHeight, isCountdown);
+        this._drawWinner(ctx, winner, canvasWidth, canvasHeight, isCountdown, animT);
     }
 
-    // ── Private: single winner ────────────────────────────────────────────────
+    // ── Single winner ─────────────────────────────────────────────────────────
 
-    _drawWinner(ctx, winner, canvasWidth, canvasHeight, isCountdown) {
-        const overlayAlpha = isCountdown ? 0.7 : 0.5;
+    _drawWinner(ctx, winner, canvasWidth, canvasHeight, isCountdown, animT) {
+        const ease = this._easeOutBack(Math.min(1, animT));
+        const fade = Math.min(1, animT * 1.6);
+
+        const overlayAlpha = (isCountdown ? 0.70 : 0.55) * fade;
         ctx.save();
 
+        // Full-screen dim only — no circular disc/ring (arena is already a circle)
         ctx.fillStyle = `rgba(0,0,0,${overlayAlpha})`;
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
+        const cx = canvasWidth / 2;
+        const cy = canvasHeight * 0.36;
+
         const img = winner.country.image;
         if (img && img.complete) {
-            const flagWidth  = Math.min(canvasWidth * 0.22, 220);
+            const flagWidth  = Math.min(canvasWidth * 0.26, 250) * ease;
             const flagHeight = flagWidth * 0.70;
-            const flagX      = (canvasWidth  - flagWidth)  / 2;
-            const flagY      = canvasHeight * 0.33;
+            const flagX      = cx - flagWidth / 2;
+            const flagY      = cy - flagHeight / 2;
 
-            ctx.shadowColor = "rgba(255,215,0,0.4)";
-            ctx.shadowBlur  = 50;
+            // Soft multi-pass gold glow (no geometric disc)
+            ctx.shadowColor = `rgba(255,215,0,${0.55 * fade})`;
+            ctx.shadowBlur  = 56 * ease;
+            ctx.drawImage(img, flagX, flagY, flagWidth, flagHeight);
+            ctx.shadowColor = `rgba(255,160,40,${0.35 * fade})`;
+            ctx.shadowBlur  = 28 * ease;
             ctx.drawImage(img, flagX, flagY, flagWidth, flagHeight);
             ctx.shadowBlur  = 0;
+
+            // Thin bright border
+            ctx.strokeStyle = `rgba(255,255,255,${0.55 * fade})`;
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(flagX, flagY, flagWidth, flagHeight);
         }
 
+        ctx.globalAlpha = fade;
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor  = "rgba(0,0,0,0.8)";
-        ctx.shadowBlur   = 20;
+        ctx.shadowColor  = "rgba(0,0,0,0.90)";
+        ctx.shadowBlur   = 16;
 
-        const gradient = ctx.createLinearGradient(
-            canvasWidth / 2 - 150, canvasHeight / 2,
-            canvasWidth / 2 + 150, canvasHeight / 2
-        );
-        gradient.addColorStop(0,   "#FFD700");
-        gradient.addColorStop(0.5, "#FFA500");
-        gradient.addColorStop(1,   "#FFD700");
-
+        // Country name
+        const nameSize = Math.min(canvasWidth * 0.068, 64) * (0.88 + 0.12 * ease);
+        const gradient = ctx.createLinearGradient(cx - 160, 0, cx + 160, 0);
+        gradient.addColorStop(0,   "#FFE566");
+        gradient.addColorStop(0.5, "#FFD700");
+        gradient.addColorStop(1,   "#FFA500");
         ctx.fillStyle = gradient;
-        const nameSize = Math.min(canvasWidth * 0.06, 58);
-        ctx.font = `bold ${nameSize}px Arial`;
+        ctx.font = `900 ${nameSize}px system-ui, Arial, sans-serif`;
         ctx.fillText(
             winner.country.name.toUpperCase(),
-            canvasWidth / 2,
-            canvasHeight / 2 + 50
+            cx,
+            canvasHeight * 0.56
         );
 
+        // Champion line
+        const badgeY = canvasHeight * 0.56 + nameSize * 0.95;
+        ctx.font = `bold ${Math.min(canvasWidth * 0.040, 36)}px system-ui, Arial, sans-serif`;
         ctx.fillStyle = "#FFD700";
-        ctx.font      = "bold 40px Arial";
-        ctx.fillText("🏆 WINS! 🏆", canvasWidth / 2, canvasHeight / 2 + 120);
+        ctx.shadowBlur = 20;
+        ctx.fillText("🏆  CHAMPION  🏆", cx, badgeY);
+
+        // Subtitle
+        ctx.font = `600 ${Math.min(canvasWidth * 0.022, 17)}px system-ui, Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.shadowBlur = 8;
+        ctx.fillText("LAST FLAG STANDING", cx, badgeY + Math.min(canvasWidth * 0.038, 30));
 
         ctx.restore();
     }
 
-    // ── Private: tie screen ───────────────────────────────────────────────────
+    // ── Tie screen ────────────────────────────────────────────────────────────
 
-    _drawTie(ctx, winner, canvasWidth, canvasHeight) {
+    _drawTie(ctx, winner, canvasWidth, canvasHeight, animT) {
+        const ease = this._easeOutBack(Math.min(1, animT));
+        const fade = Math.min(1, animT * 1.6);
+
         ctx.save();
+        ctx.globalAlpha = fade;
 
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillStyle = "rgba(0,0,0,0.60)";
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        const cx = canvasWidth / 2;
 
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor  = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur   = 20;
+        ctx.shadowColor  = "rgba(0,0,0,0.90)";
+        ctx.shadowBlur   = 18;
 
-        // "IT'S A TIE!" heading
-        const headingSize = Math.min(canvasWidth * 0.07, 64);
-        ctx.font      = `bold ${headingSize}px Arial`;
+        // Heading
+        const headingSize = Math.min(canvasWidth * 0.068, 56) * (0.9 + 0.1 * ease);
+        ctx.font      = `900 ${headingSize}px system-ui, Arial, sans-serif`;
         ctx.fillStyle = "#FF6B6B";
-        ctx.fillText("🤝 IT'S A TIE! 🤝", canvasWidth / 2, canvasHeight * 0.30);
+        ctx.fillText("🤝  IT'S A TIE!  🤝", cx, canvasHeight * 0.26);
 
-        // Draw small flags side-by-side for each tied country (up to 4)
+        // Flags side-by-side (no circular frames)
         const countries  = winner.countries ?? [];
         const maxShow    = Math.min(countries.length, 4);
-        const flagW      = Math.min(canvasWidth * 0.14, 120);
+        const flagW      = Math.min(canvasWidth * 0.15, 130) * ease;
         const flagH      = flagW * 0.70;
-        const gap        = 16;
+        const gap        = Math.max(12, canvasWidth * 0.02);
         const totalW     = maxShow * flagW + (maxShow - 1) * gap;
         const startX     = (canvasWidth - totalW) / 2;
-        const flagY      = canvasHeight * 0.42;
+        const flagY      = canvasHeight * 0.40;
 
         for (let i = 0; i < maxShow; i++) {
             const img = countries[i].image;
             const x   = startX + i * (flagW + gap);
 
             if (img && img.complete) {
-                ctx.shadowColor = "rgba(255,107,107,0.35)";
-                ctx.shadowBlur  = 30;
+                ctx.shadowColor = "rgba(255,100,100,0.35)";
+                ctx.shadowBlur  = 24;
                 ctx.drawImage(img, x, flagY, flagW, flagH);
                 ctx.shadowBlur  = 0;
+                ctx.strokeStyle = "rgba(255,255,255,0.35)";
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(x, flagY, flagW, flagH);
             }
 
-            // Country name below each flag
-            const nameSize = Math.min(canvasWidth * 0.025, 18);
-            ctx.font      = `bold ${nameSize}px Arial`;
+            const nameSize = Math.min(canvasWidth * 0.024, 17);
+            ctx.font      = `bold ${nameSize}px system-ui, Arial, sans-serif`;
             ctx.fillStyle = "#ffffff";
             ctx.shadowBlur = 8;
             ctx.fillText(
                 countries[i].name.toUpperCase(),
                 x + flagW / 2,
-                flagY + flagH + 14
+                flagY + flagH + 16
             );
         }
 
-        // "eliminated at the same time" sub-label
-        ctx.font      = `bold ${Math.min(canvasWidth * 0.028, 22)}px Arial`;
-        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.font      = `600 ${Math.min(canvasWidth * 0.028, 20)}px system-ui, Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.65)";
         ctx.shadowBlur = 10;
         ctx.fillText(
             "exited the arena simultaneously",
-            canvasWidth / 2,
+            cx,
             canvasHeight * 0.72
         );
 
         ctx.restore();
+    }
+
+    _easeOutBack(t) {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     }
 }

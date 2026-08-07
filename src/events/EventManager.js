@@ -13,7 +13,7 @@ const ALL_EVENTS = [
   TurboEvent,
      LowGravityEvent,
     EarthquakeEvent,
-ShrinkingArenaEvent,
+// ShrinkingArenaEvent,
     DoubleHoleEvent,
     MagnetCoreEvent,
     WindGustEvent,

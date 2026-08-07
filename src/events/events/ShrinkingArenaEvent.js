@@ -9,22 +9,24 @@ export default class ShrinkingArenaEvent {
     _targetRadius       = 0;
     _originalInitialGap = 0;
     _originalMaxGap     = 0;
-    _duration           = 600; // ~10 s at 60 fps
+    // Faster shrink (~7.5 s) so pressure ramps before the match drags
+    _duration           = 450;
     _timer              = 0;
 
     start({ arena, drain }) {
         this._originalRadius     = arena.radius;
-        this._targetRadius       = arena.radius * 0.52;
+        // Shrink to ~55% — tight but still playable
+        this._targetRadius       = arena.radius * 0.55;
         this._originalInitialGap = arena.initialGapSize;
         this._originalMaxGap     = arena.maxGapSize;
 
-        // Wider gap only during this event so flags can actually escape
-        arena.initialGapSize = 14;
-        arena.maxGapSize     = 28;
+        // Wider gap so escapes remain possible as the circle tightens
+        arena.initialGapSize = 12;
+        arena.maxGapSize     = 26;
+        arena.gapSize        = Math.max(arena.gapSize, 12);
 
         this._timer = 0;
 
-        // Tell DrainSystem to use boosted forces + per-flag damping
         if (drain) drain.shrinkMode = true;
     }
 
@@ -33,7 +35,7 @@ export default class ShrinkingArenaEvent {
 
         this._timer++;
 
-        // Time-based shrink so the arena visibly closes regardless of eliminations
+        // Ease-in-out with a slightly steeper mid section for visible pressure
         const t     = Math.min(1, this._timer / this._duration);
         const eased = t < 0.5
             ? 2 * t * t
@@ -49,26 +51,25 @@ export default class ShrinkingArenaEvent {
             const dist = Math.hypot(dx, dy);
             if (dist === 0) continue;
 
-            if (dist > arena.radius - 5) {
+            if (dist > arena.radius - 6) {
+                const push = 0.014 + eased * 0.008;
                 Matter.Body.applyForce(flag.body, flag.body.position, {
-                    x: -(dx / dist) * 0.012,
-                    y: -(dy / dist) * 0.012,
+                    x: -(dx / dist) * push,
+                    y: -(dy / dist) * push,
                 });
-                // Damp velocity so flags don't endlessly bounce the moving wall
                 Matter.Body.setVelocity(flag.body, {
-                    x: flag.body.velocity.x * 0.85,
-                    y: flag.body.velocity.y * 0.85,
+                    x: flag.body.velocity.x * 0.82,
+                    y: flag.body.velocity.y * 0.82,
                 });
             }
         }
     }
 
     end({ arena, drain }) {
-        arena.radius        = this._originalRadius;
+        arena.radius         = this._originalRadius;
         arena.initialGapSize = this._originalInitialGap;
-        arena.maxGapSize    = this._originalMaxGap;
+        arena.maxGapSize     = this._originalMaxGap;
 
-        // Restore normal drain behaviour for all other events
         if (drain) drain.shrinkMode = false;
     }
 }
