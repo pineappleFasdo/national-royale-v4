@@ -77,10 +77,28 @@ export default class Game {
         this.physics = new PhysicsWorld(width, height);
         Matter.Events.on(this.physics.engine, "collisionStart", (event) => {
 
-            if (this.gameState !== "PLAYING") return;
-        
-            this.audio.playCollision();
-        
+            const isPlaying   = this.gameState === "PLAYING";
+            const isCountdown = this.gameState === "COUNTDOWN";
+
+            if (!isPlaying && !isCountdown) return;
+
+            for (const pair of event.pairs) {
+                const labelA = pair.bodyA.label;
+                const labelB = pair.bodyB.label;
+
+                const isFlag = (l) => l === "flag";
+                const isWall = (l) => l === "arenaWall";
+
+                if (isFlag(labelA) && isFlag(labelB)) {
+                    this.audio.playCollision("flag");
+                    break;
+                }
+                if (isPlaying && (isFlag(labelA) || isFlag(labelB)) && (isWall(labelA) || isWall(labelB))) {
+                    this.audio.playCollision("wall");
+                    break;
+                }
+            }
+
         });
 
         this.arena = new ArenaPhysics(

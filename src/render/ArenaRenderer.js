@@ -4,7 +4,10 @@ export default class ArenaRenderer {
 
         ctx.save();
 
-        ctx.translate(arena.cx, arena.cy);
+        ctx.translate(
+            arena.cx + (arena._shakeX ?? 0) + (arena._swayX ?? 0),
+            arena.cy + (arena._shakeY ?? 0) + (arena._swayY ?? 0)
+        );
         ctx.rotate(arena.angle);
 
         ctx.strokeStyle = "white";

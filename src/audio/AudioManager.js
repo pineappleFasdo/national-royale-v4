@@ -4,11 +4,14 @@
 export default class AudioManager {
 
     constructor() {
-        this._ctx         = null;
-        this._masterGain  = null;
+        this._ctx        = null;
+        this._masterGain = null;
 
-        this._lastCollision   = 0;
-        this._collisionCoolMs = 60;   // min ms between collision sounds
+        // Separate cooldowns so wall hits never silence flag collisions
+        this._lastFlagCollision = 0;
+        this._lastWallCollision = 0;
+        this._flagCoolMs        = 40;   // max ~25 flag-hit sounds/s
+        this._wallCoolMs        = 80;   // max ~12 wall-hit sounds/s
 
         this._milestonesHit = new Set();
 
@@ -19,13 +22,10 @@ export default class AudioManager {
 
     _getCtx() {
         if (this._ctx) return this._ctx;
-
-        this._ctx = new (window.AudioContext || window.webkitAudioContext)();
-
-        this._masterGain            = this._ctx.createGain();
+        this._ctx        = new (window.AudioContext || window.webkitAudioContext)();
+        this._masterGain = this._ctx.createGain();
         this._masterGain.gain.value = this.volume;
         this._masterGain.connect(this._ctx.destination);
-
         return this._ctx;
     }
 
@@ -88,55 +88,64 @@ export default class AudioManager {
 
     // ── Public sound API ─────────────────────────────────────────────────────
 
-    /** Soft thud when flags collide — has built-in 60ms cooldown */
-    playCollision() {
+    /**
+     * Main collision entry point — called from Game.js collisionStart handler.
+     * Pass type = "flag" (default) or "wall" to get the right sound.
+     * Keeps the call-site in Game.js simple: audio.playCollision("wall")
+     */
+    playCollision(type = "flag") {
+        if (type === "wall") {
+            this._playWallHit();
+        } else {
+            this._playFlagHit();
+        }
+    }
+
+    /** Soft rubbery thud — flag ↔ flag */
+    _playFlagHit() {
         const now = performance.now();
-        if (now - this._lastCollision < this._collisionCoolMs) return;
-        this._lastCollision = now;
+        if (now - this._lastFlagCollision < this._flagCoolMs) return;
+        this._lastFlagCollision = now;
 
         const ctx = this._resume();
         const t   = ctx.currentTime;
 
-        this._tone(110 + Math.random() * 40, t, 0.07, 0.12, "sine", 0.06);
-        this._noise(t, 0.04, 0.06, 300);
+        // 2-octave pitch range (130–520 Hz) so rapid hits sound like a
+        // busy pinball machine rather than a monotone buzz
+        const baseFreq = 130 * Math.pow(2, Math.random() * 2);
+        const gain     = 0.10 + Math.random() * 0.06;
+
+        this._tone(baseFreq,       t,        0.06, gain,        "sine", 0.055);
+        this._tone(baseFreq * 1.5, t,        0.03, gain * 0.35, "sine", 0.025);
+        this._noise(t, 0.025, gain * 0.45, 900);
     }
 
-    /** Descending whoosh when a flag is eliminated */
+    /** Crisp click — flag ↔ arena wall */
+    _playWallHit() {
+        const now = performance.now();
+        if (now - this._lastWallCollision < this._wallCoolMs) return;
+        this._lastWallCollision = now;
+
+        const ctx = this._resume();
+        const t   = ctx.currentTime;
+
+        // Narrower range (300–700 Hz), brighter, shorter — clearly distinct
+        const baseFreq = 300 + Math.random() * 400;
+        const gain     = 0.07 + Math.random() * 0.04;
+
+        this._tone(baseFreq, t, 0.04, gain, "triangle", 0.035);
+        this._noise(t, 0.018, gain * 0.55, 2200);
+    }
+
     /** Sharp arcade pop when a flag is eliminated */
-playElimination() {
+    playElimination() {
+        const ctx = this._resume();
+        const t   = ctx.currentTime;
 
-    const ctx = this._resume();
-    const t = ctx.currentTime;
-
-    // Main pop
-    this._tone(
-        850,
-        t,
-        0.035,
-        0.28,
-        "square",
-        0.03
-    );
-
-    // Small click
-    this._tone(
-        450,
-        t + 0.01,
-        0.03,
-        0.12,
-        "triangle",
-        0.025
-    );
-
-    // Tiny burst of noise
-    this._noise(
-        t,
-        0.02,
-        0.05,
-        3500
-    );
-
-}
+        this._tone(850,      t,        0.035, 0.28, "square",   0.030);
+        this._tone(450,      t + 0.01, 0.030, 0.12, "triangle", 0.025);
+        this._noise(t, 0.020, 0.05, 3500);
+    }
 
     /** Rising two-note stab when the gap opens and the round begins */
     playRoundStart() {
@@ -167,12 +176,10 @@ playElimination() {
         const t     = ctx.currentTime;
         const notes = [261.6, 329.6, 392.0, 523.3];   // C4 E4 G4 C5
 
-        // Arpeggio
         notes.forEach((freq, i) => {
             this._tone(freq, t + i * 0.09, 0.55, 0.40, "triangle", 0.25);
         });
 
-        // Held chord
         const chordStart = t + notes.length * 0.09 + 0.05;
         notes.forEach(freq => {
             this._tone(freq, chordStart, 0.80, 0.30, "sine", 0.40);
@@ -183,7 +190,7 @@ playElimination() {
     }
 
     /**
-     * Chime at 50% / 25% / 10 flags remaining — each one higher to build tension.
+     * Chime at 50% / 25% / 10 flags remaining.
      * @param {number} remaining  flags left
      * @param {number} total      flags at match start
      */

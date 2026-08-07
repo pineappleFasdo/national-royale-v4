@@ -20,9 +20,8 @@ export default class WindGustEvent {
         this._windAngle = Math.random() * Math.PI * 2;
     }
 
-    update({ flagManager }) {
-        this._timer++;
-        this._windAngle += 0.003;
+    update({ flagManager, arena }) {
+        this._timer++;        this._windAngle += 0.003;
 
         if (!this._gusting && this._timer >= this._interval) {
             this._timer     = 0;
@@ -46,8 +45,25 @@ export default class WindGustEvent {
             for (const flag of flagManager.flags) {
                 Matter.Body.applyForce(flag.body, flag.body.position, { x: fx, y: fy });
             }
+
+            // Arena sways in wind direction — same envelope, max ±18px offset
+            if (arena) {
+                arena._swayX = Math.cos(this._gustAngle) * env * 18;
+                arena._swayY = Math.sin(this._gustAngle) * env * 18;
+            }
+        } else {
+            // Smoothly settle back to centre after gust ends
+            if (arena) {
+                arena._swayX = (arena._swayX ?? 0) * 0.90;
+                arena._swayY = (arena._swayY ?? 0) * 0.90;
+            }
         }
     }
 
-    end() {}
+    end({ arena }) {
+        if (arena) {
+            arena._swayX = 0;
+            arena._swayY = 0;
+        }
+    }
 }

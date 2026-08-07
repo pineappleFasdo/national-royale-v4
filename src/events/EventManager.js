@@ -9,11 +9,11 @@ import WindGustEvent       from "./events/WindGustEvent.js";
 import BouncyEvent         from "./events/BouncyEvent.js";
 
 const ALL_EVENTS = [
-    ClassicEvent,
-    TurboEvent,
-    LowGravityEvent,
+     ClassicEvent,
+  TurboEvent,
+     LowGravityEvent,
     EarthquakeEvent,
-    ShrinkingArenaEvent,
+ShrinkingArenaEvent,
     DoubleHoleEvent,
     MagnetCoreEvent,
     WindGustEvent,
