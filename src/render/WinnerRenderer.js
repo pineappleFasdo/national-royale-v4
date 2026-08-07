@@ -15,21 +15,24 @@ export default class WinnerRender {
         const img = winner.country.image;
 
         if (img && img.complete) {
-            const flagSize = Math.min(canvasWidth * 0.2, 240);
-            const width = flagSize;
-            const height = flagSize * 0.7;
+            const flagWidth  = Math.min(canvasWidth * 0.22, 220);
+const flagHeight = flagWidth * 0.70;
+
+const flagX = (canvasWidth - flagWidth) / 2;
+const flagY = canvasHeight * 0.33;
 
             // Glow effect
             ctx.shadowColor = "rgba(255,215,0,0.4)";
             ctx.shadowBlur = 50;
             
-            ctx.drawImage(
-                img,
-                canvasWidth / 2 - width / 2,
-                canvasHeight / 2 - 160,
-                width,
-                height
-            );
+           
+ctx.drawImage(
+    img,
+    flagX,
+    flagY,
+    flagWidth,
+    flagHeight
+);
             
             ctx.shadowBlur = 0;
         }
@@ -54,7 +57,9 @@ export default class WinnerRender {
         gradient.addColorStop(1, '#FFD700');
         
         ctx.fillStyle = gradient;
-        ctx.font = "bold 56px Arial";
+        const nameSize = Math.min(canvasWidth * 0.06, 58);
+
+ctx.font = `bold ${nameSize}px Arial`;
         ctx.fillText(
             `${winner.country.name.toUpperCase()}`,
             canvasWidth / 2,

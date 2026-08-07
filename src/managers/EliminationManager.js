@@ -8,6 +8,19 @@ export default class EliminationManager {
         this.world = world;
         this.eliminated = [];
 
+        // Snapshot the outer boundary at construction time.
+        // We eliminate flags once they cross this fixed threshold so that a
+        // shrinking arena (which reduces arena.radius dynamically) doesn't
+        // accidentally shrink the elimination zone inward and trap flags
+        // that are already outside the original wall.
+        this._outerBoundary = arena.radius + 40;
+
+    }
+
+    // Call this when a new round starts so the boundary resets to
+    // the fresh arena size.
+    reset() {
+        this._outerBoundary = this.arena.radius + 40;
     }
 
     update(flagManager) {
@@ -23,15 +36,11 @@ export default class EliminationManager {
                 dx * dx + dy * dy
             );
 
-            // Eliminate once the flag is clearly outside
-            if (distance > this.arena.radius + 40) {
+            // Use the fixed outer boundary so that shrinking the arena
+            // doesn't move the elimination line inward — flags must reach
+            // the original wall radius + buffer to be eliminated.
+            if (distance > this._outerBoundary) {
 
-                // IMPORTANT: also remove the physics body from the
-                // world. Previously only the render/tracking array
-                // was cleared, so every eliminated flag kept living
-                // in the Matter world forever as an invisible
-                // collider, piling up right around the gap and
-                // physically jamming flags that were trying to exit.
                 Matter.World.remove(
                     this.world,
                     flag.body

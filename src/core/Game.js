@@ -101,21 +101,21 @@ export default class Game {
             this.layout.arenaX, this.layout.arenaY, spawnRadius, this.totalCountries
         );
 
-        const flagW       = Math.max(6, spacing * 0.82);
-        const flagH       = Math.max(4, flagW * 0.70);
-        const actualCount = Math.min(this.totalCountries, positions.length);
+        // Store spawn positions so _beginCountdown() can pick them up,
+        // just like it does for every round after the first.
+        this._nextSpawnPositions = positions;
+        this._nextFlagW = Math.max(6, spacing * 0.82);
+        this._nextFlagH = Math.max(4, this._nextFlagW * 0.70);
 
-        for (let i = 0; i < actualCount; i++) {
-            this.flagManager.addFlag(countries[i], positions[i].x, positions[i].y, flagW, flagH);
-        }
-
-        this.arena.setTotalFlags(actualCount);
-        this.matchStartTime     = Date.now();
-        this.lastRemainingCount = -1;
-
+        // Pick the first event before the countdown so it's ready to display.
         this.eventManager.pick();
 
+        // Wire the win callback before _beginCountdown() fires.
         this.winnerManager.onWin = (winner) => this.handleWinner(winner);
+
+        // Route the first round through the same countdown flow as all later
+        // rounds — this is what shows the event name on first start.
+        this._beginCountdown();
     }
 
     // ── State transitions ────────────────────────────────────────────────────
@@ -167,10 +167,15 @@ export default class Game {
         this.gameState        = "COUNTDOWN";
         this.restartCountdown = 3;
 
-        // PHASE 2 FIX: close the gap synchronously before flags spawn
-        this.arena.state      = ArenaPhysics.STATE_INTRO;
-        this.arena.introTimer = 0;
-        this.arena.gapSize    = 0;
+        // Reset arena radius in case ShrinkingArena left it smaller than full size
+        this.arena.radius     = this.layout.arenaRadius;
+        // Keep arena walls fully closed during the countdown.
+        // Set introDuration very high so the arena never auto-transitions to
+        // STATE_OPENING on its own — _startPlaying() will force STATE_PLAYING instantly.
+        this.arena.state         = ArenaPhysics.STATE_INTRO;
+        this.arena.introTimer    = 0;
+        this.arena.introDuration = 99999;
+        this.arena.gapSize       = 0;
         this.arena.syncWalls();
 
         const positions = this._nextSpawnPositions;
@@ -186,6 +191,12 @@ export default class Game {
         this.arena.setRemainingFlags(this.totalCountries);
         this.matchStartTime     = Date.now();
         this.lastRemainingCount = -1;
+
+        // Reset the outer-boundary snapshot so the elimination zone
+        // matches the freshly-restored arena radius each new round.
+        if (this.eliminationManager) {
+            this.eliminationManager.reset();
+        }
 
         this.winnerManager.reset();
         this.confetti.particles = [];
@@ -211,6 +222,12 @@ export default class Game {
 
     _startPlaying() {
         this.gameState = "PLAYING";
+        // Open the arena INSTANTLY — skip the INTRO timer and OPENING animation.
+        // The 3-2-1 countdown in _drawCountdownOverlay is the only countdown the
+        // player sees; there is no separate "OPENING IN" phase any more.
+        this.arena.state   = ArenaPhysics.STATE_PLAYING;
+        this.arena.gapSize = this.arena.initialGapSize;
+        this.arena.syncWalls();
         this.audio.playRoundStart();
         this.eventManager.start(this._eventCtx());
     }
@@ -340,54 +357,9 @@ export default class Game {
     // ── Overlay helpers ───────────────────────────────────────────────────────
 
     _drawCentralOverlay(ctx) {
-        const { arena, canvas } = this;
-
-        if (this.gameState === "PLAYING" && arena.state === ArenaPhysics.STATE_INTRO) {
-            const framesLeft = arena.introDuration - arena.introTimer;
-            const secsLeft   = Math.ceil(framesLeft / 60);
-
-            ctx.save();
-
-            ctx.fillStyle = "rgba(0,0,0,0.32)";
-            ctx.beginPath();
-            ctx.arc(this.layout.arenaX, this.layout.arenaY, this.layout.arenaRadius * 0.38, 0, Math.PI * 2);
-            ctx.fill();
-
-            const cx = canvas.width / 2;
-            const cy = this.layout.arenaY;
-
-            const ev = this.eventManager;
-            ctx.font         = "bold 18px Arial";
-            ctx.textAlign    = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillStyle    = ev.color;
-            ctx.shadowColor  = "rgba(0,0,0,0.9)";
-            ctx.shadowBlur   = 12;
-            ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy - 55);
-
-            ctx.font      = "bold 22px Arial";
-            ctx.fillStyle = "rgba(255,255,255,0.80)";
-            ctx.shadowBlur = 10;
-            ctx.fillText("OPENING IN", cx, cy - 22);
-
-            ctx.font      = "bold 68px Arial";
-            ctx.fillStyle = "#FFD700";
-            ctx.shadowBlur = 22;
-            ctx.fillText(secsLeft, cx, cy + 35);
-
-            ctx.restore();
-
-        } else if (this.gameState === "PLAYING" && arena.state === ArenaPhysics.STATE_OPENING) {
-            ctx.save();
-            ctx.font         = "bold 44px Arial";
-            ctx.textAlign    = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillStyle    = "rgba(255,215,0,0.80)";
-            ctx.shadowColor  = "rgba(0,0,0,0.8)";
-            ctx.shadowBlur   = 16;
-            ctx.fillText("⚡ OPENING ⚡", canvas.width / 2, this.layout.arenaY);
-            ctx.restore();
-        }
+        // No central overlay text any more.
+        // The 3-2-1 countdown (_drawCountdownOverlay) is the sole signal to
+        // the viewer, and the arena opens instantly the moment it ends.
     }
 
     _drawNextEventOverlay(ctx) {
@@ -410,11 +382,13 @@ export default class Game {
         ctx.shadowColor  = "rgba(0,0,0,0.9)";
         ctx.shadowBlur   = 20;
 
-        ctx.font      = "bold 36px Arial";
+        const titleSize = Math.min(this.canvas.width * 0.045, 36);
+ctx.font = `bold ${titleSize}px Arial`;
         ctx.fillStyle = "#FFD700";
         ctx.fillText("NEXT EVENT", cx, cy - 30);
 
-        ctx.font      = "bold 52px Arial";
+        const eventSize = Math.min(this.canvas.width * 0.065, 52);
+ctx.font = `bold ${eventSize}px Arial`;
         ctx.fillStyle = ev.color;
         ctx.shadowBlur = 28;
         ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy + 32);
@@ -430,24 +404,34 @@ export default class Game {
 
         ctx.save();
 
-        ctx.fillStyle = "rgba(0,0,0,0.38)";
+        // Slightly larger dark circle so the big number has breathing room
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
         ctx.beginPath();
-        ctx.arc(cx, cy, this.layout.arenaRadius * 0.48, 0, Math.PI * 2);
+        ctx.arc(cx, cy, this.layout.arenaRadius * 0.58, 0, Math.PI * 2);
         ctx.fill();
 
         const ev = this.eventManager;
-        ctx.font         = "bold 18px Arial";
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
-        ctx.fillStyle    = ev.color;
         ctx.shadowColor  = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur   = 12;
-        ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy - 58);
 
-        ctx.font      = "bold 110px Arial";
+        // Event icon + name
+        ctx.font = `bold ${Math.min(this.canvas.width * 0.025,20)}px Arial`;
+        ctx.fillStyle = ev.color;
+        ctx.shadowBlur = 12;
+        ctx.fillText(`${ev.icon} ${ev.name}`, cx, cy - 72);
+
+        // "STARTS IN" label
+        ctx.font = `bold ${Math.min(this.canvas.width * 0.028,22)}px Arial`;
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.shadowBlur = 10;
+        ctx.fillText("STARTS IN", cx, cy - 40);
+
+        // Big countdown number — the centrepiece
+        ctx.font = `bold ${Math.min(this.canvas.width * 0.18,150)}px Arial`;
         ctx.fillStyle = "#FFD700";
-        ctx.shadowBlur = 24;
-        ctx.fillText(this.restartCountdown, cx, cy + 18);
+        ctx.shadowBlur = 32;
+        ctx.fillText(this.restartCountdown, cx, cy + 48);
 
         ctx.restore();
     }
