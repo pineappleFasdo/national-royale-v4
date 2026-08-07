@@ -45,8 +45,10 @@ export default class LayoutManager {
         this.height = height;
 
         // Row height scales: ~19px on small phones, up to 26px on tablets/desktop
-        this.lbRowH   = Math.round(Math.min(26, Math.max(18, height * 0.028)));
-        this.lbZoneH  = this.lbTopPad + this.lbRowCount * this.lbRowH + this.lbGapBelow;
+        this.lbRowH    = Math.round(Math.min(26, Math.max(18, height * 0.028)));
+        // lbHeaderH mirrors the header stripe added by LeaderboardRenderer
+        this.lbHeaderH = Math.max(14, Math.round(this.lbRowH * 0.48));
+        this.lbZoneH   = this.lbTopPad + this.lbHeaderH + this.lbRowCount * this.lbRowH + this.lbGapBelow;
 
         // Bar height scales with screen
         this.barHeight = Math.round(Math.min(20, Math.max(14, height * 0.020)));

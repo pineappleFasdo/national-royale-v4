@@ -136,6 +136,12 @@ export default class Game {
         // Wire the win callback before _beginCountdown() fires.
         this.winnerManager.onWin = (winner) => this.handleWinner(winner);
 
+        // Phase 3: give WinnerManager a direct reference to the renderer so it
+        // can call markDirty() immediately after a win is recorded — triggering
+        // the bump animation and a deferred re-sort — without Game needing to
+        // thread the result through every frame.
+        this.winnerManager.leaderboardRenderer = this.leaderboardRenderer;
+
         // Route the first round through the same countdown flow as all later
         // rounds — this is what shows the event name on first start.
         this._beginCountdown();
@@ -154,13 +160,32 @@ export default class Game {
         // Silence any in-progress commentary so it doesn't clash with the announcement
         this.commentary.silence();
 
-        this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
-        this.audio.playWinner();
-        this.audio.speak(`${winner.country.name} wins!`);
+        const isTie = winner?.isTie === true;
+
+        if (isTie && !winner.isSilent) {
+            // Two or more flags drained simultaneously — it's a tie.
+            // Shorter display time for ties since there's no flag to celebrate.
+            this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
+            this.audio.playWinner();   // same fanfare — still exciting
+            const names = (winner.countries ?? []).map(c => c.name).join(" and ");
+            if (names) this.audio.speak(`It's a tie between ${names}!`);
+        } else if (!isTie) {
+            // Normal single winner
+            this.confetti.start(this.canvas.width / 2, this.canvas.height / 2);
+            this.audio.playWinner();
+            this.audio.speak(`${winner.country.name} wins!`);
+        }
+        // isSilent ties (no elimination history) skip audio and confetti —
+        // they restart immediately so the player barely notices.
 
         this.eventManager.pick();
 
-        this.restartTimer = setTimeout(() => this._beginNextEvent(), this.winnerDisplayDuration);
+        // Shorten the display for a silent restart; normal timing otherwise
+        const displayDuration = (isTie && winner.isSilent)
+            ? 500
+            : this.winnerDisplayDuration;
+
+        this.restartTimer = setTimeout(() => this._beginNextEvent(), displayDuration);
     }
 
     _beginNextEvent() {
@@ -321,7 +346,9 @@ export default class Game {
             }
         }
 
-        this.winnerManager.update(this.flagManager);
+        // Pass eliminationManager so WinnerManager can detect simultaneous
+        // exits (tie) when the flag count drops straight to 0 in one frame.
+        this.winnerManager.update(this.flagManager, this.eliminationManager);
         this.confetti.update();
     }
 
@@ -334,11 +361,11 @@ export default class Game {
         ctx.fillStyle = "#111";
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Leaderboard — always drawn, shows dash placeholders before first win
-        const leaderboard = this.winnerManager.getLeaderboard();
+        // Leaderboard — always drawn; renderer manages its own stable sorted list
+        // (updated via markDirty after each win) so we don't re-sort every frame.
         this.leaderboardRenderer.draw(
             ctx,
-            leaderboard,
+            this.winnerManager.getLeaderboard(),   // passed for first-frame seeding only
             layout.lbX, layout.lbY, layout.lbW, layout.lbRowH, layout.lbRowCount
         );
 
