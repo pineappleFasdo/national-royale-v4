@@ -8,8 +8,6 @@ export default class Flag {
         this.width   = width;
         this.height  = height;
 
-        // Slight air drag + realistic bounce prevents infinite energy
-        // and reduces wall-wedge deadlocks.
         this.body = Matter.Bodies.rectangle(
             x, y,
             this.width, this.height,
@@ -17,17 +15,15 @@ export default class Flag {
                 label       : "flag",
                 restitution : 0.88,
                 friction    : 0.01,
-                frictionAir : 0.004,
+                frictionAir : 0.006,
                 density     : 0.0012,
                 chamfer     : { radius: Math.max(1, width * 0.06) },
-                // Allow sleep so packed early-game flags cost less CPU
-                sleepThreshold: 60,
+                sleepThreshold: 80,
             }
         );
 
         Matter.World.add(world, this.body);
 
-        // Spread initial directions; speed scales with size
         const speed = Math.max(1.8, this.width * 0.18);
         const angle = Math.random() * Math.PI * 2;
 
@@ -41,7 +37,6 @@ export default class Flag {
             (Math.random() - 0.5) * 0.12
         );
 
-        // Stuck-detection counter (used by FlagManager)
         this._stillFrames = 0;
     }
 
@@ -59,11 +54,11 @@ export default class Flag {
 
         const img = this.country.image;
 
+        // Always prefer the real flag image when it is loaded
         if (img && img.complete && img.naturalWidth > 0) {
-            // Skip expensive clip/roundRect for small flags (most of a 200-pack).
-            // Only clip when flags are large enough that square corners are noticeable.
-            if (w >= 18) {
-                const radius = Math.max(2, w * 0.08);
+            // Only clip rounded corners on larger flags (saves CPU on tiny ones)
+            if (w >= 16) {
+                const radius = Math.max(1.5, w * 0.08);
                 ctx.beginPath();
                 if (typeof ctx.roundRect === "function") {
                     ctx.roundRect(-w / 2, -h / 2, w, h, radius);
@@ -74,7 +69,8 @@ export default class Flag {
             }
             ctx.drawImage(img, -w / 2, -h / 2, w, h);
         } else {
-            ctx.fillStyle = "#334466";
+            // Fallback only while image is still loading
+            ctx.fillStyle = "#446688";
             ctx.fillRect(-w / 2, -h / 2, w, h);
         }
 

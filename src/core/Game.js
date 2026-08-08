@@ -26,7 +26,17 @@ export default class Game {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx    = canvas.getContext("2d");
-        this.totalCountries = countries.length;
+
+        // Create flagLoader FIRST (required by _pickNextBatch)
+        this.flagLoader = new FlagLoader();
+
+        // ── Country rotation (all countries over time, 100 per round) ──
+        this.allCountries   = countries;
+        this.roundSize      = 100;          // change to 60 for lower CPU
+        this._recentBatches = [];           // last 2 batches (less-repeat)
+
+        this.activeCountries = this._pickNextBatch();
+        this.totalCountries  = this.activeCountries.length;
 
         this.physics            = null;
         this.arena              = null;
@@ -38,15 +48,12 @@ export default class Game {
         this.bottomTrayRenderer  = new BottomTrayRenderer();
         this.progressBarRenderer = new ProgressBarRenderer();
         this.leaderboardRenderer = new LeaderboardRenderer();
-        this.flagLoader          = new FlagLoader();
         this.layout              = new LayoutManager();
         this.eventManager        = new EventManager();
         this.trayLauncher        = new TrayLauncher();
 
         this.matchStartTime     = Date.now();
         this.lastRemainingCount = -1;
-
-        countries.forEach(c => { c.image = this.flagLoader.load(c.code); });
 
         this.winnerManager = new WinnerManager();
         this.winnerRender  = new WinnerRender();
@@ -68,6 +75,58 @@ export default class Game {
         this._nextSpawnPositions = null;
         this._nextFlagW          = 0;
         this._nextFlagH          = 0;
+
+        this._frame = 0;
+
+        // Staggered spawn
+        this._spawnPositions = null;
+        this._spawnFlagW     = 0;
+        this._spawnFlagH     = 0;
+        this._spawnIndex     = 0;
+        this._spawnTotal     = 0;
+        this._spawnPerFrame  = 12;
+    }
+
+    // ── Random batch with less-repeat ─────────────────────────────────────────
+
+    _pickNextBatch() {
+        const pool = this.allCountries;
+        const size = Math.min(this.roundSize, pool.length);
+
+        const recent = new Set(this._recentBatches.flat());
+
+        const fresh = [];
+        const used  = [];
+        for (const c of pool) {
+            if (recent.has(c.code)) used.push(c);
+            else fresh.push(c);
+        }
+
+        const shuffle = (arr) => {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        };
+
+        shuffle(fresh);
+        shuffle(used);
+
+        const batch = fresh.slice(0, size);
+        if (batch.length < size) {
+            batch.push(...used.slice(0, size - batch.length));
+        }
+
+        batch.forEach(c => {
+            if (!c.image) c.image = this.flagLoader.load(c.code);
+        });
+
+        const codes = batch.map(c => c.code);
+        this._recentBatches.push(codes);
+        if (this._recentBatches.length > 2) this._recentBatches.shift();
+
+        return batch;
     }
 
     // ── Resize ────────────────────────────────────────────────────────────────
@@ -107,7 +166,6 @@ export default class Game {
                     break;
                 }
             }
-
         });
 
         this.arena = new ArenaPhysics(
@@ -135,7 +193,6 @@ export default class Game {
         this.eventManager.pick();
 
         this.winnerManager.onWin = (winner) => this.handleWinner(winner);
-
         this.winnerManager.leaderboardRenderer = this.leaderboardRenderer;
 
         if (this.gameState !== "START_SCREEN") {
@@ -156,12 +213,12 @@ export default class Game {
         const isTie = winner?.isTie === true;
 
         if (isTie && !winner.isSilent) {
-            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.4, 260);
+            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.4, 130);
             this.audio.playWinner();
             const names = (winner.countries ?? []).map(c => c.name).join(" and ");
             if (names) this.audio.speak(`It's a tie between ${names}!`);
         } else if (!isTie) {
-            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.36, 320);
+            this.confetti.start(this.canvas.width / 2, this.canvas.height * 0.36, 150);
             this.audio.playWinner();
             this.audio.speak(`${winner.country.name} wins!`);
         }
@@ -179,6 +236,10 @@ export default class Game {
         this.gameState      = "NEXT_EVENT";
         this.nextEventTimer = 0;
 
+        // New random batch (less-repeat)
+        this.activeCountries = this._pickNextBatch();
+        this.totalCountries  = this.activeCountries.length;
+
         const spawnRadius = this.layout.arenaRadius - 20;
         const { positions, spacing } = SpawnManager.generate(
             this.layout.arenaX, this.layout.arenaY, spawnRadius, this.totalCountries
@@ -193,7 +254,7 @@ export default class Game {
 
         this._clearAllFlags();
 
-        const launchFlags = countries.map(c => ({ country: c }));
+        const launchFlags = this.activeCountries.map(c => ({ country: c }));
         this.trayLauncher.startLaunch(
             launchFlags,
             this.layout.trayTop,
@@ -208,8 +269,6 @@ export default class Game {
 
         this.nextEventDuration = 130;
     }
-
-    // ── Restart system ───────────────────────────────────────────────────────
 
     startGame() {
         this._doReset();
@@ -231,12 +290,14 @@ export default class Game {
         this.leaderboardRenderer.reset();
 
         this.trayLauncher.cancel();
-
         this._clearAllFlags();
 
         this.confetti.particles = [];
         this.fx.reset();
         this.nextEventTimer = 0;
+
+        this.activeCountries = this._pickNextBatch();
+        this.totalCountries  = this.activeCountries.length;
 
         const spawnRadius = this.layout.arenaRadius - 20;
         const { positions, spacing } = SpawnManager.generate(
@@ -247,7 +308,6 @@ export default class Game {
         this._nextFlagH = Math.max(4, this._nextFlagW * 0.70);
 
         this.eventManager.pick();
-
         this._beginNextEvent();
     }
 
@@ -263,14 +323,14 @@ export default class Game {
         this.arena.gapSize       = 0;
         this.arena.syncWalls();
 
-        const positions = this._nextSpawnPositions;
-        const flagW     = this._nextFlagW;
-        const flagH     = this._nextFlagH;
-        const count     = Math.min(this.totalCountries, positions?.length ?? 0);
+        this.winnerManager.reset();
 
-        for (let i = 0; i < count; i++) {
-            this.flagManager.addFlag(countries[i], positions[i].x, positions[i].y, flagW, flagH);
-        }
+        this._spawnPositions = this._nextSpawnPositions;
+        this._spawnFlagW     = this._nextFlagW;
+        this._spawnFlagH     = this._nextFlagH;
+        this._spawnIndex     = 0;
+        this._spawnTotal     = Math.min(this.totalCountries, this._spawnPositions?.length ?? 0);
+        this._spawnPerFrame  = 12;
 
         this.arena.setTotalFlags(this.totalCountries);
         this.arena.setRemainingFlags(this.totalCountries);
@@ -279,12 +339,11 @@ export default class Game {
 
         if (this.eliminationManager) {
             this.eliminationManager.reset();
+            this.eliminationManager.eliminated = [];
         }
 
-        this.winnerManager.reset();
         this.confetti.particles = [];
         this.fx.reset();
-
         this.arena._flagsRef = this.flagManager.flags;
 
         this.audio.resetMilestones();
@@ -296,6 +355,19 @@ export default class Game {
             if (this.restartCountdown <= 0) {
                 clearInterval(this.restartTimer);
                 this.restartTimer = null;
+
+                while (this._spawnIndex < this._spawnTotal) {
+                    this.flagManager.addFlag(
+                        this.activeCountries[this._spawnIndex],
+                        this._spawnPositions[this._spawnIndex].x,
+                        this._spawnPositions[this._spawnIndex].y,
+                        this._spawnFlagW,
+                        this._spawnFlagH
+                    );
+                    this._spawnIndex++;
+                }
+                this.arena._flagsRef = this.flagManager.flags;
+
                 this._startPlaying();
             } else {
                 this.audio.playCountdown(this.restartCountdown);
@@ -304,8 +376,8 @@ export default class Game {
     }
 
     _startPlaying() {
-        this.gameState = "PLAYING";
-        this.arena.state   = ArenaPhysics.STATE_PLAYING;
+        this.gameState     = "PLAYING";
+        this.arena.state    = ArenaPhysics.STATE_PLAYING;
         this.arena.gapSize = this.arena.initialGapSize;
         this.arena.syncWalls();
         this.audio.playRoundStart();
@@ -313,11 +385,15 @@ export default class Game {
     }
 
     _clearAllFlags() {
-        this.flagManager.flags.forEach(flag => {
-            Matter.World.remove(this.physics.world, flag.body);
-        });
-        this.flagManager.flags             = [];
-        this.eliminationManager.eliminated = [];
+        if (this.flagManager) {
+            this.flagManager.flags.forEach(flag => {
+                Matter.World.remove(this.physics.world, flag.body);
+            });
+            this.flagManager.flags = [];
+        }
+        if (this.eliminationManager) {
+            this.eliminationManager.eliminated = [];
+        }
     }
 
     _eventCtx() {
@@ -336,6 +412,9 @@ export default class Game {
 
         const state = this.gameState;
 
+        this._frame = (this._frame || 0) + 1;
+        const evenFrame = (this._frame % 2) === 0;
+
         if (state === "NEXT_EVENT") {
             this.nextEventTimer++;
             this.trayLauncher.update();
@@ -345,6 +424,21 @@ export default class Game {
         }
 
         if (state === "COUNTDOWN") {
+            if (this._spawnIndex < this._spawnTotal) {
+                const end = Math.min(this._spawnIndex + this._spawnPerFrame, this._spawnTotal);
+                for (let i = this._spawnIndex; i < end; i++) {
+                    this.flagManager.addFlag(
+                        this.activeCountries[i],
+                        this._spawnPositions[i].x,
+                        this._spawnPositions[i].y,
+                        this._spawnFlagW,
+                        this._spawnFlagH
+                    );
+                }
+                this._spawnIndex = end;
+                this.arena._flagsRef = this.flagManager.flags;
+            }
+
             this.physics.update();
             this.arena.update();
         }
@@ -366,12 +460,19 @@ export default class Game {
                 }
 
                 this.arena.setRemainingFlags(countAfter);
-                this.drain.update();
-                this.drain.applyDrainForce(this.flagManager.flags);
+
+                if (evenFrame) {
+                    this.drain.update();
+                    this.drain.applyDrainForce(this.flagManager.flags);
+                }
+            }
+
+            // Winner check ONLY while playing
+            if (evenFrame) {
+                this.winnerManager.update(this.flagManager, this.eliminationManager);
             }
         }
 
-        this.winnerManager.update(this.flagManager, this.eliminationManager);
         this.confetti.update();
         this.fx.update();
     }
@@ -421,7 +522,6 @@ export default class Game {
             );
         }
 
-        // Collision sparks only (no full-screen shake/flash)
         this.fx.draw(ctx, this.canvas.width, this.canvas.height);
 
         this._drawCentralOverlay(ctx);
@@ -450,11 +550,7 @@ export default class Game {
         }
     }
 
-    // ── Overlay helpers ───────────────────────────────────────────────────────
-
-    _drawCentralOverlay(ctx) {
-        // no-op
-    }
+    _drawCentralOverlay(ctx) {}
 
     _drawNextEventOverlay(ctx) {
         const ev    = this.eventManager;
@@ -587,8 +683,6 @@ export default class Game {
         const b = parseInt(full.slice(4, 6), 16);
         return `rgba(${r},${g},${b},${alpha})`;
     }
-
-    // ── Main loop ─────────────────────────────────────────────────────────────
 
     loop = () => {
         this.update();

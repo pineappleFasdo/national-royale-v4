@@ -1,50 +1,27 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaderboardRenderer.js  –  Phase 3 overhaul
-//
-// Design goals
-//   1. Flag images always render  (waits for load; shows shimmer until ready)
-//   2. Stable ordering            (no rank-swap flicker mid-round; re-sort only
-//                                  after a win, not every frame)
-//   3. Long names handled         (ellipsis truncation with measured pixel width)
-//   4. Responsive sizing          (scales from 320 px phones to 4K canvases)
-//   5. Animated win-count bump    (number pops gold, scales up, eases back)
-//   6. Runs every frame           (called from Game.draw() unconditionally)
-// ─────────────────────────────────────────────────────────────────────────────
+// LeaderboardRenderer.js
+// FIX 5: _truncate results cached by (text, maxWidth, font) — avoids a
+//         character-by-character measureText loop every frame for long names.
 
 export default class LeaderboardRenderer {
 
     constructor() {
-        // ── Stable display list ───────────────────────────────────────────────
-        // We freeze the sorted order between wins so rows don't jitter.
-        // Only refreshed by markDirty(), called from WinnerManager after a win.
-        this._stableRows  = [];   // the list actually rendered
-        this._pendingRows = null; // a new sorted list waiting to be applied
+        this._stableRows  = [];
+        this._pendingRows = null;
         this._dirty       = false;
-
-        // ── Win-count animation state ─────────────────────────────────────────
-        // Map of  countryCode → { startTime, fromValue, toValue }
-        this._bumps = new Map();
-
-        // ── Flag image shimmer phase (per-slot, so all shimmer independently) ─
+        this._bumps       = new Map();
         this._shimmerPhase = 0;
+
+        // FIX 5: Truncation cache: key → truncated string
+        this._truncCache  = new Map();
+        this._truncCacheFont = "";   // invalidate when font changes
     }
 
-    // ── Public: called by WinnerManager / Game after every win ───────────────
-
-    /**
-     * Tell the renderer a new sorted leaderboard is available.
-     * The visual list is only re-sorted at the NEXT frame after a 400 ms
-     * settle delay so the user sees the bump animation before a re-order.
-     *
-     * @param {Array}  rows       - sorted leaderboard from WinnerManager.getLeaderboard()
-     * @param {string} [winCode]  - ISO code of the flag that just won (triggers bump anim)
-     */
-    /** Wipe display state — called on full game reset so no stale data lingers. */
     reset() {
         this._stableRows  = [];
         this._pendingRows = null;
         this._dirty       = false;
         this._bumps       = new Map();
+        this._truncCache  = new Map();
     }
 
     markDirty(rows, winCode) {
@@ -58,36 +35,27 @@ export default class LeaderboardRenderer {
 
             this._bumps.set(winCode, {
                 startTime : performance.now(),
-                duration  : 600,   // ms
+                duration  : 600,
                 fromValue : fromVal,
                 toValue   : toVal,
             });
         }
 
-        // Apply new order after a short delay so the pop anim plays first
         setTimeout(() => {
             if (this._pendingRows) {
                 this._stableRows  = this._pendingRows;
                 this._pendingRows = null;
+                // Invalidate truncation cache when rows change
+                this._truncCache.clear();
             }
             this._dirty = false;
         }, 420);
     }
 
-    // ── Main draw entry-point ─────────────────────────────────────────────────
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {Array}  rows      - from WinnerManager.getLeaderboard()
-     * @param {number} x, y, w  - panel origin and width
-     * @param {number} rowH      - from LayoutManager.lbRowH
-     * @param {number} maxRows   - from LayoutManager.lbRowCount
-     */
     draw(ctx, rows, x, y, w, rowH = 28, maxRows = 5) {
 
-        this._shimmerPhase = (performance.now() / 1200) % 1;   // 0..1 loop ~1.2s
+        this._shimmerPhase = (performance.now() / 1200) % 1;
 
-        // Seed the stable list on the very first frame so we always show something
         if (this._stableRows.length === 0 && rows.length > 0) {
             this._stableRows = rows.slice(0, maxRows);
         }
@@ -98,23 +66,20 @@ export default class LeaderboardRenderer {
 
         const totalH  = rowH * maxRows;
 
-        // Dynamic sizing derived from rowH
         const padL    = Math.max(6,  Math.round(rowH * 0.30));
         const padR    = Math.max(6,  Math.round(rowH * 0.30));
         const flagW   = Math.round(rowH * 1.55);
         const flagH   = Math.round(rowH * 0.72);
-        const rankW   = Math.round(rowH * 0.95);   // fixed column so flags align
+        const rankW   = Math.round(rowH * 0.95);
         const fontSize = Math.max(10, Math.round(rowH * 0.44));
-        const winsW   = Math.round(w * 0.22);      // right column for win count
+        const winsW   = Math.round(w * 0.22);
 
         ctx.save();
 
-        // ── Panel background ──────────────────────────────────────────────────
         ctx.fillStyle = "rgba(8,10,24,0.90)";
         this._rrect(ctx, x, y, w, totalH, 7);
         ctx.fill();
 
-        // ── Header stripe ─────────────────────────────────────────────────────
         const headerH = Math.max(14, Math.round(rowH * 0.48));
         ctx.fillStyle = "rgba(30,100,200,0.18)";
         this._rrect(ctx, x, y, w, headerH, [7, 7, 0, 0]);
@@ -130,7 +95,6 @@ export default class LeaderboardRenderer {
 
         const rowsY = y + headerH;
 
-        // ── Rows ──────────────────────────────────────────────────────────────
         visible.forEach((entry, i) => {
             this._drawRow(
                 ctx, entry, i,
@@ -140,7 +104,6 @@ export default class LeaderboardRenderer {
             );
         });
 
-        // ── Outer border ──────────────────────────────────────────────────────
         ctx.strokeStyle = "rgba(80,160,255,0.35)";
         ctx.lineWidth   = 1.2;
         this._rrect(ctx, x, y, w, totalH + headerH, 7);
@@ -149,16 +112,13 @@ export default class LeaderboardRenderer {
         ctx.restore();
     }
 
-    // ── Row renderer ──────────────────────────────────────────────────────────
-
     _drawRow(ctx, entry, i, x, ry, w, rowH, padL, padR, flagW, flagH, rankW, fontSize, winsW, maxRows) {
 
         const midY = ry + rowH / 2;
 
-        // Row background tint
-        const rowBg = i === 0 ? "rgba(255,215,0,0.22)"      // gold
-                    : i === 1 ? "rgba(192,192,192,0.20)"    // silver
-                    : i === 2 ? "rgba(176,100,40,0.22)"     // bronze
+        const rowBg = i === 0 ? "rgba(255,215,0,0.22)"
+                    : i === 1 ? "rgba(192,192,192,0.20)"
+                    : i === 2 ? "rgba(176,100,40,0.22)"
                     :           "rgba(255,255,255,0.03)";
 
         ctx.fillStyle = rowBg;
@@ -166,7 +126,6 @@ export default class LeaderboardRenderer {
         ctx.rect(x, ry, w, rowH - 1);
         ctx.fill();
 
-        // ── Rank badge ───────────────────────────────────────────────────────
         const rankColor = i === 0 ? "#D4A017"
                         : i === 1 ? "#A8A8A8"
                         : i === 2 ? "#C46228"
@@ -175,7 +134,6 @@ export default class LeaderboardRenderer {
         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
 
         ctx.fillStyle    = rankColor;
-        ctx.font         = `bold ${fontSize}px Arial`;
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
 
@@ -187,34 +145,31 @@ export default class LeaderboardRenderer {
             ctx.fillText(`${i + 1}`, x + padL + rankW / 2, midY);
         }
 
-        // ── Empty placeholder row ─────────────────────────────────────────────
         if (!entry) {
             this._drawPlaceholder(ctx, x, ry, w, rowH, midY, padL, padR, rankW, flagW, flagH, fontSize, winsW, i, maxRows);
             return;
         }
 
-        // ── Flag image ────────────────────────────────────────────────────────
         const flagX = x + padL + rankW + 6;
         const flagY = ry + (rowH - flagH) / 2;
 
         this._drawFlag(ctx, entry.image, flagX, flagY, flagW, flagH);
 
-        // ── Country name ──────────────────────────────────────────────────────
         const nameX    = flagX + flagW + 8;
         const nameMaxW = w - (nameX - x) - winsW - padR - 4;
 
+        const nameFont = `bold ${fontSize}px Arial`;
         ctx.fillStyle    = "rgba(100,180,255,0.95)";
-        ctx.font         = `bold ${fontSize}px Arial`;
+        ctx.font         = nameFont;
         ctx.textAlign    = "left";
         ctx.textBaseline = "middle";
 
-        const truncated = this._truncate(ctx, entry.name, nameMaxW);
+        // FIX 5: Use cached truncation result
+        const truncated = this._truncateCached(ctx, entry.name, nameMaxW, nameFont);
         ctx.fillText(truncated, nameX, midY);
 
-        // ── Win count (with bump animation) ──────────────────────────────────
         this._drawWins(ctx, entry, x + w - padR, midY, fontSize, winsW);
 
-        // ── Row divider ───────────────────────────────────────────────────────
         if (i < maxRows - 1) {
             ctx.strokeStyle = "rgba(255,255,255,0.07)";
             ctx.lineWidth   = 0.8;
@@ -224,8 +179,6 @@ export default class LeaderboardRenderer {
             ctx.stroke();
         }
     }
-
-    // ── Flag image with shimmer fallback ─────────────────────────────────────
 
     _drawFlag(ctx, img, fx, fy, fw, fh) {
 
@@ -238,7 +191,6 @@ export default class LeaderboardRenderer {
         if (ready) {
             ctx.drawImage(img, fx, fy, fw, fh);
         } else {
-            // Animated shimmer while image loads
             const shimX = fx + (this._shimmerPhase * 2 - 0.5) * fw * 2;
             const grad  = ctx.createLinearGradient(shimX - fw * 0.5, 0, shimX + fw * 0.5, 0);
             grad.addColorStop(0,    "rgba(40,44,68,0.9)");
@@ -251,7 +203,6 @@ export default class LeaderboardRenderer {
 
         ctx.restore();
 
-        // Border
         ctx.strokeStyle = ready
             ? "rgba(255,255,255,0.22)"
             : "rgba(255,255,255,0.08)";
@@ -259,8 +210,6 @@ export default class LeaderboardRenderer {
         this._rrect(ctx, fx, fy, fw, fh, 2);
         ctx.stroke();
     }
-
-    // ── Wins column with pop animation ────────────────────────────────────────
 
     _drawWins(ctx, entry, rightEdge, midY, fontSize, colW) {
 
@@ -276,24 +225,21 @@ export default class LeaderboardRenderer {
             const progress = Math.min(1, elapsed / bump.duration);
 
             if (progress < 1) {
-                // Use the "to" value immediately but animate the visual pop
                 displayWins = bump.toValue;
 
-                // Scale: quick up (0→0.3 of duration) then ease back (0.3→1)
                 const peakT = 0.30;
                 if (progress < peakT) {
                     const t = progress / peakT;
-                    scale   = 1 + 0.40 * t;               // 1 → 1.4
+                    scale   = 1 + 0.40 * t;
                 } else {
                     const t = (progress - peakT) / (1 - peakT);
-                    scale   = 1.40 - 0.40 * this._easeOut(t); // 1.4 → 1.0
+                    scale   = 1.40 - 0.40 * this._easeOut(t);
                 }
 
-                // Gold flash fading to normal amber
                 const flashFade = Math.max(0, 1 - progress * 2.5);
                 const r = Math.round(255);
-                const g = Math.round(196 + 59 * flashFade);   // 196 → 255 → 196
-                const b = Math.round(77  * (1 - flashFade));  // 77  → 0
+                const g = Math.round(196 + 59 * flashFade);
+                const b = Math.round(77  * (1 - flashFade));
                 color = `rgb(${r},${g},${b})`;
             } else {
                 this._bumps.delete(entry.code);
@@ -310,7 +256,6 @@ export default class LeaderboardRenderer {
         ctx.textBaseline = "middle";
 
         if (scale > 1) {
-            // Drop shadow for the pop
             ctx.shadowColor = "rgba(255,220,80,0.60)";
             ctx.shadowBlur  = 8;
         }
@@ -319,15 +264,12 @@ export default class LeaderboardRenderer {
         ctx.restore();
     }
 
-    // ── Placeholder row (no winner yet for this slot) ─────────────────────────
-
     _drawPlaceholder(ctx, x, ry, w, rowH, midY, padL, padR, rankW, flagW, flagH, fontSize, winsW, i, maxRows) {
 
         const dashColor = "rgba(255,255,255,0.18)";
         const flagX     = x + padL + rankW + 6;
         const flagY     = ry + (rowH - flagH) / 2;
 
-        // Flag slot outline with shimmer
         const shimX = flagX + (this._shimmerPhase * 2 - 0.5) * flagW * 1.5;
         const grad  = ctx.createLinearGradient(shimX - flagW * 0.4, 0, shimX + flagW * 0.4, 0);
         grad.addColorStop(0,    "rgba(30,34,54,0.6)");
@@ -343,7 +285,6 @@ export default class LeaderboardRenderer {
         ctx.stroke();
         ctx.restore();
 
-        // Dash marks
         ctx.fillStyle    = dashColor;
         ctx.font         = `bold ${fontSize}px Arial`;
         ctx.textAlign    = "left";
@@ -363,9 +304,31 @@ export default class LeaderboardRenderer {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // FIX 5: Cached truncation — only measures text if not seen before with this font.
+    _truncateCached(ctx, text, maxWidth, font) {
+        // Round maxWidth to avoid near-identical keys
+        const key = `${font}|${Math.round(maxWidth)}|${text}`;
 
-    /** Truncate text with ellipsis to fit within maxWidth pixels. */
+        if (this._truncCache.has(key)) return this._truncCache.get(key);
+
+        let result;
+        if (ctx.measureText(text).width <= maxWidth) {
+            result = text;
+        } else {
+            let t = text;
+            while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) {
+                t = t.slice(0, -1);
+            }
+            result = t + "…";
+        }
+
+        // Limit cache size to avoid memory leak for huge country lists
+        if (this._truncCache.size > 500) this._truncCache.clear();
+        this._truncCache.set(key, result);
+        return result;
+    }
+
+    /** Truncate text with ellipsis to fit within maxWidth pixels (uncached). */
     _truncate(ctx, text, maxWidth) {
         if (ctx.measureText(text).width <= maxWidth) return text;
         let t = text;
@@ -375,7 +338,6 @@ export default class LeaderboardRenderer {
         return t + "…";
     }
 
-    /** Rounded-rect path helper — accepts uniform radius or [tl,tr,br,bl]. */
     _rrect(ctx, x, y, w, h, r) {
         if (typeof ctx.roundRect === "function") {
             ctx.beginPath();
@@ -397,7 +359,6 @@ export default class LeaderboardRenderer {
         }
     }
 
-    /** Cubic ease-out: fast start, slow end. */
     _easeOut(t) {
         return 1 - Math.pow(1 - t, 3);
     }

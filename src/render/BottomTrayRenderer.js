@@ -1,11 +1,19 @@
+// FIX 8: Layout (flagH, flagW, cols, rows) is cached and only recomputed when
+// the eliminated count changes. Saves a for-loop of up to ~70 iterations every frame.
+
 export default class BottomTrayRenderer {
+
+    constructor() {
+        // Cache for the expensive flagH-fitting loop
+        this._layoutCache = null;
+    }
 
     draw(ctx, eliminated, canvasWidth, canvasHeight, trayHeight = 80) {
 
         const padding = 5;
         const trayTop = canvasHeight - trayHeight;
 
-        // Background
+        // Background gradient
         const gradient = ctx.createLinearGradient(0, trayTop, 0, canvasHeight);
         gradient.addColorStop(0, "rgba(18,18,28,0.97)");
         gradient.addColorStop(1, "rgba(8,8,14,1)");
@@ -19,7 +27,10 @@ export default class BottomTrayRenderer {
         ctx.lineTo(canvasWidth, trayTop);
         ctx.stroke();
 
-        if (eliminated.length === 0) return;
+        if (eliminated.length === 0) {
+            this._layoutCache = null;   // reset cache when tray is cleared
+            return;
+        }
 
         const availW = canvasWidth - padding * 2;
         const availH = trayHeight  - padding * 2;
@@ -28,27 +39,36 @@ export default class BottomTrayRenderer {
         const gapX   = 2;
         const gapY   = 2;
 
-        // Find largest flag height that still fits all eliminated flags
-        let flagH = 6;
-        for (let h = 6; h <= availH; h++) {
-            const w    = Math.round(h * aspect);
-            const cols = Math.floor((availW + gapX) / (w + gapX));
-            if (cols < 1) break;
-            const rows   = Math.ceil(eliminated.length / cols);
-            const totalH = rows * (h + gapY) - gapY;
-            if (totalH <= availH) {
-                flagH = h;
-            } else {
-                break;
+        // FIX 8: Only recompute layout when eliminated count or canvas width changes
+        const cacheKey = `${eliminated.length}|${canvasWidth}|${trayHeight}`;
+        let layout = this._layoutCache;
+
+        if (!layout || layout.key !== cacheKey) {
+            let flagH = 6;
+            for (let h = 6; h <= availH; h++) {
+                const w    = Math.round(h * aspect);
+                const cols = Math.floor((availW + gapX) / (w + gapX));
+                if (cols < 1) break;
+                const rows   = Math.ceil(eliminated.length / cols);
+                const totalH = rows * (h + gapY) - gapY;
+                if (totalH <= availH) {
+                    flagH = h;
+                } else {
+                    break;
+                }
             }
+
+            const flagW  = Math.round(flagH * aspect);
+            const cols   = Math.max(1, Math.floor((availW + gapX) / (flagW + gapX)));
+            const rows   = Math.ceil(eliminated.length / cols);
+            const gridH  = rows * (flagH + gapY) - gapY;
+            const startY = trayTop + padding + Math.max(0, (availH - gridH) / 2);
+
+            layout = { key: cacheKey, flagH, flagW, cols, rows, startY };
+            this._layoutCache = layout;
         }
 
-        const flagW = Math.round(flagH * aspect);
-        const cols  = Math.max(1, Math.floor((availW + gapX) / (flagW + gapX)));
-        const rows  = Math.ceil(eliminated.length / cols);
-
-        const gridH  = rows * (flagH + gapY) - gapY;
-        const startY = trayTop + padding + Math.max(0, (availH - gridH) / 2);
+        const { flagH, flagW, cols, startY } = layout;
 
         for (let i = 0; i < eliminated.length; i++) {
 

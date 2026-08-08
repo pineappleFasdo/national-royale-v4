@@ -9,8 +9,9 @@ export default class TurboEvent {
         this._originalSpeed  = arena.rotationSpeed;
         arena._turboActive   = true;
         arena.rotationSpeed  = 0.068;
-        arena.initialGapSize = 5;
-        arena.maxGapSize     = 14;
+        // scaled for 48 segments (was 5/14 @ 96)
+        arena.initialGapSize = 3;
+        arena.maxGapSize     = 7;
     }
 
     update({ arena }) {
@@ -22,7 +23,8 @@ export default class TurboEvent {
     end({ arena }) {
         arena._turboActive   = false;
         arena.rotationSpeed  = this._originalSpeed;
-        arena.initialGapSize = 6;
-        arena.maxGapSize     = 18;
+        // restore to new defaults (scaled)
+        arena.initialGapSize = 4;
+        arena.maxGapSize     = 12;
     }
 }

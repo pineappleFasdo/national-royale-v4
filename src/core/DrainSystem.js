@@ -83,8 +83,8 @@ export default class DrainSystem {
             let diff = flagAngle - gapCenterAngle;
             diff = Math.atan2(Math.sin(diff), Math.cos(diff));
 
-            // Start funneling a bit earlier from center
-            const nearWall = dist > this.arena.radius * (this.shrinkMode ? 0.40 : 0.48);
+            // PERFORMANCE: Only apply force when flag is near the rim
+            const nearWall = dist > this.arena.radius * (this.shrinkMode ? 0.40 : 0.55);
             if (!nearWall) continue;
             if (Math.abs(diff) > funnelHalfAngle) continue;
 

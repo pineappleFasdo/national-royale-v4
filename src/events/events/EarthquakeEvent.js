@@ -29,7 +29,7 @@ export default class EarthquakeEvent {
             this._shakeLeft--;
             if (this._shakeLeft <= 0) this._shaking = false;
 
-            // Shake offset for ArenaRenderer — amplitude tapers as shake ends
+            // Visual shake only (cheap)
             const intensity = this._shakeLeft / 18;
             arena._shakeX = (Math.random() - 0.5) * 18 * intensity;
             arena._shakeY = (Math.random() - 0.5) * 18 * intensity;
@@ -37,10 +37,16 @@ export default class EarthquakeEvent {
             physics.engine.world.gravity.x = (Math.random() - 0.5) * 0.04;
             physics.engine.world.gravity.y = (Math.random() - 0.5) * 0.04;
 
-            for (const flag of flagManager.flags) {
-                Matter.Body.applyForce(flag.body, flag.body.position, {
-                    x: (Math.random() - 0.5) * 0.0018,
-                    y: (Math.random() - 0.5) * 0.0018,
+            // PERFORMANCE: only shake 1/3 of flags each frame
+            const flags = flagManager.flags;
+            const len   = flags.length;
+            const start = this._shakeLeft % 3;
+            const force = 0.0054; // 3× stronger so total energy stays similar
+
+            for (let i = start; i < len; i += 3) {
+                Matter.Body.applyForce(flags[i].body, flags[i].body.position, {
+                    x: (Math.random() - 0.5) * force,
+                    y: (Math.random() - 0.5) * force,
                 });
             }
         } else {

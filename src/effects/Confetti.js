@@ -9,10 +9,10 @@ export default class Confetti {
     /**
      * @param {number} x
      * @param {number} y
-     * @param {number} [count=280]
+     * @param {number} [count=140]
      * @param {object} [opts]
      */
-    start(x, y, count = 280, opts = {}) {
+    start(x, y, count = 140, opts = {}) {
         this.particles = [];
 
         const colors = opts.colors ?? [

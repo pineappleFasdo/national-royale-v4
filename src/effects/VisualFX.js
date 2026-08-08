@@ -1,10 +1,11 @@
 // VisualFX.js — collision sparks only (no full-screen shake / flash)
+// FIX 3: Shadow is set ONCE per draw call instead of per-particle.
+// This eliminates 180 shadow state changes per frame at peak.
 
 export default class VisualFX {
 
     constructor() {
         this.sparks = [];
-        // kept for API compatibility; always zero
         this.shakeX = 0;
         this.shakeY = 0;
     }
@@ -53,17 +54,32 @@ export default class VisualFX {
     }
 
     draw(ctx, _canvasW, _canvasH) {
+        if (this.sparks.length === 0) return;
+
+        // FIX 3: Set shadow state ONCE before the loop, not per-particle.
+        // Grouping by color and setting shadow once saves ~180 GPU state changes/frame.
+        ctx.save();
+        ctx.shadowBlur = 2;
+
+        // Group sparks by color to minimize state switches
+        const byColor = new Map();
         for (const s of this.sparks) {
-            ctx.save();
-            ctx.globalAlpha = Math.max(0, s.life);
-            ctx.fillStyle = s.color;
-            ctx.shadowColor = s.color;
-            ctx.shadowBlur = 6;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+            if (!byColor.has(s.color)) byColor.set(s.color, []);
+            byColor.get(s.color).push(s);
         }
+
+        for (const [color, group] of byColor) {
+            ctx.fillStyle   = color;
+            ctx.shadowColor = color;
+            for (const s of group) {
+                ctx.globalAlpha = Math.max(0, s.life);
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        ctx.restore();
     }
 
     reset() {

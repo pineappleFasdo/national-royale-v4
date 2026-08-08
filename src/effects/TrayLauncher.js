@@ -22,8 +22,8 @@ export default class TrayLauncher {
      * @param {number} canvasW
      * @param {number} arenaX, arenaY, arenaR
      * @param {Array}  targets - [{x,y}, ...] spawn positions
-     * @param {number} [flagW] - arena flag width  (exact in-game size)
-     * @param {number} [flagH] - arena flag height (exact in-game size)
+     * @param {number} [flagW] - arena flag width
+     * @param {number} [flagH] - arena flag height
      */
     startLaunch(flags, trayTop, canvasW, arenaX, arenaY, arenaR, targets, flagW = 0, flagH = 0) {
         this.particles = [];
@@ -36,11 +36,9 @@ export default class TrayLauncher {
             return;
         }
 
-        // End size = exact arena flag size
         const endW = flagW > 0 ? flagW : 18;
         const endH = flagH > 0 ? flagH : endW * 0.70;
 
-        // Start size = small tray chips
         const spacing     = 2;
         const aspectRatio = 1.45;
         const maxFlagH    = 12;
@@ -69,10 +67,11 @@ export default class TrayLauncher {
             const peakY = Math.min(sy, target.y) - arenaR * (0.25 + Math.random() * 0.2);
             const fan   = (sx - canvasW / 2) * 0.08;
 
+            // Stagger more so fewer particles move at once
             const delay = Math.floor(
-                (row / Math.max(1, rows - 1)) * 20 +
-                (col / Math.max(1, cols - 1)) * 12 +
-                Math.random() * 6
+                (row / Math.max(1, rows - 1)) * 28 +
+                (col / Math.max(1, cols - 1)) * 16 +
+                Math.random() * 8
             );
 
             this.particles.push({
@@ -82,16 +81,16 @@ export default class TrayLauncher {
                 ty    : target.y,
                 delay,
                 t     : 0,
-                speed : 0.022 + Math.random() * 0.010,
+                speed : 0.028 + Math.random() * 0.012, // slightly faster → shorter overall
                 w     : fW,
                 h     : fH,
-                endW,   // same as arena flags
-                endH,   // same as arena flags
+                endW,
+                endH,
                 done  : false,
                 cpx   : midX + fan,
                 cpy   : peakY,
                 rot   : 0,
-                rotSpd: (Math.random() - 0.5) * 0.03,
+                rotSpd: (Math.random() - 0.5) * 0.025,
             });
         }
     }
@@ -136,13 +135,12 @@ export default class TrayLauncher {
             if (p.delay > 0 || p.done) continue;
 
             const raw = p.t;
-            const t   = raw * raw * (3 - 2 * raw);
+            const t   = raw * raw * (3 - 2 * raw); // smoothstep
             const mt  = 1 - t;
 
             const bx = mt * mt * p.sx + 2 * mt * t * p.cpx + t * t * p.tx;
             const by = mt * mt * p.sy + 2 * mt * t * p.cpy + t * t * p.ty;
 
-            // Grow from tray size → exact arena flag size
             const drawW = p.w + (p.endW - p.w) * t;
             const drawH = p.h + (p.endH - p.h) * t;
 
@@ -153,14 +151,8 @@ export default class TrayLauncher {
             ctx.translate(bx, by);
             ctx.rotate(p.rot);
 
+            // PERFORMANCE: no clip/roundRect during flight — big saving
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
-                ctx.beginPath();
-                if (typeof ctx.roundRect === "function") {
-                    ctx.roundRect(-drawW / 2, -drawH / 2, drawW, drawH, Math.max(1, drawW * 0.08));
-                } else {
-                    ctx.rect(-drawW / 2, -drawH / 2, drawW, drawH);
-                }
-                ctx.clip();
                 ctx.drawImage(p.img, -drawW / 2, -drawH / 2, drawW, drawH);
             } else {
                 ctx.fillStyle = "#334466";

@@ -1,5 +1,6 @@
 // ALL sounds are synthesised with the Web Audio API — no mp3/wav files needed.
 // AudioContext is created lazily on the first user interaction.
+// FIX 6: Noise buffers are pre-allocated and reused instead of created per collision.
 
 export default class AudioManager {
 
@@ -7,15 +8,17 @@ export default class AudioManager {
         this._ctx        = null;
         this._masterGain = null;
 
-        // Separate cooldowns so wall hits never silence flag collisions
         this._lastFlagCollision = 0;
         this._lastWallCollision = 0;
-        this._flagCoolMs        = 40;   // max ~25 flag-hit sounds/s
-        this._wallCoolMs        = 80;   // max ~12 wall-hit sounds/s
+        this._flagCoolMs        = 40;
+        this._wallCoolMs        = 80;
 
         this._milestonesHit = new Set();
 
         this.volume = 0.7;
+
+        // FIX 6: Pre-allocated noise buffer pool (filled lazily on first audio ctx create)
+        this._noiseBuffers = new Map();  // duration_key → AudioBuffer
     }
 
     // ── AudioContext bootstrap ────────────────────────────────────────────────
@@ -59,14 +62,23 @@ export default class AudioManager {
         osc.stop(startTime + duration);
     }
 
+    // FIX 6: Reuse a pre-filled noise buffer; only allocate once per unique duration.
     _noise(startTime, duration, gain = 0.3, filterFreq = 800) {
-        const ctx        = this._resume();
-        const bufferSize = Math.ceil(ctx.sampleRate * duration);
-        const buffer     = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data       = buffer.getChannelData(0);
+        const ctx = this._resume();
 
-        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        // Round duration to 3 decimal places for cache key stability
+        const key = Math.round(duration * 1000);
 
+        let buffer = this._noiseBuffers.get(key);
+        if (!buffer) {
+            const bufferSize = Math.ceil(ctx.sampleRate * duration);
+            buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            this._noiseBuffers.set(key, buffer);
+        }
+
+        // BufferSourceNode is single-use but the buffer itself is reused
         const src  = ctx.createBufferSource();
         src.buffer = buffer;
 
@@ -88,11 +100,6 @@ export default class AudioManager {
 
     // ── Public sound API ─────────────────────────────────────────────────────
 
-    /**
-     * Main collision entry point — called from Game.js collisionStart handler.
-     * Pass type = "flag" (default) or "wall" to get the right sound.
-     * Keeps the call-site in Game.js simple: audio.playCollision("wall")
-     */
     playCollision(type = "flag") {
         if (type === "wall") {
             this._playWallHit();
@@ -101,7 +108,6 @@ export default class AudioManager {
         }
     }
 
-    /** Soft rubbery thud — flag ↔ flag */
     _playFlagHit() {
         const now = performance.now();
         if (now - this._lastFlagCollision < this._flagCoolMs) return;
@@ -110,8 +116,6 @@ export default class AudioManager {
         const ctx = this._resume();
         const t   = ctx.currentTime;
 
-        // 2-octave pitch range (130–520 Hz) so rapid hits sound like a
-        // busy pinball machine rather than a monotone buzz
         const baseFreq = 130 * Math.pow(2, Math.random() * 2);
         const gain     = 0.10 + Math.random() * 0.06;
 
@@ -120,7 +124,6 @@ export default class AudioManager {
         this._noise(t, 0.025, gain * 0.45, 900);
     }
 
-    /** Crisp click — flag ↔ arena wall */
     _playWallHit() {
         const now = performance.now();
         if (now - this._lastWallCollision < this._wallCoolMs) return;
@@ -129,7 +132,6 @@ export default class AudioManager {
         const ctx = this._resume();
         const t   = ctx.currentTime;
 
-        // Narrower range (300–700 Hz), brighter, shorter — clearly distinct
         const baseFreq = 300 + Math.random() * 400;
         const gain     = 0.07 + Math.random() * 0.04;
 
@@ -137,7 +139,6 @@ export default class AudioManager {
         this._noise(t, 0.018, gain * 0.55, 2200);
     }
 
-    /** Sharp arcade pop when a flag is eliminated */
     playElimination() {
         const ctx = this._resume();
         const t   = ctx.currentTime;
@@ -147,7 +148,6 @@ export default class AudioManager {
         this._noise(t, 0.020, 0.05, 3500);
     }
 
-    /** Rising two-note stab when the gap opens and the round begins */
     playRoundStart() {
         const ctx = this._resume();
         const t   = ctx.currentTime;
@@ -157,10 +157,6 @@ export default class AudioManager {
         this._noise(t, 0.08, 0.20, 3000);
     }
 
-    /**
-     * Single tick per countdown number.
-     * @param {number} number  3 | 2 | 1
-     */
     playCountdown(number) {
         const ctx  = this._resume();
         const t    = ctx.currentTime;
@@ -170,11 +166,10 @@ export default class AudioManager {
         this._noise(t, 0.05, 0.15, 2000);
     }
 
-    /** Triumphant fanfare chord arpeggio when a winner is found */
     playWinner() {
         const ctx   = this._resume();
         const t     = ctx.currentTime;
-        const notes = [261.6, 329.6, 392.0, 523.3];   // C4 E4 G4 C5
+        const notes = [261.6, 329.6, 392.0, 523.3];
 
         notes.forEach((freq, i) => {
             this._tone(freq, t + i * 0.09, 0.55, 0.40, "triangle", 0.25);
@@ -189,11 +184,6 @@ export default class AudioManager {
         this._noise(chordStart, 0.60, 0.12, 8000);
     }
 
-    /**
-     * Chime at 50% / 25% / 10 flags remaining.
-     * @param {number} remaining  flags left
-     * @param {number} total      flags at match start
-     */
     playMilestone(remaining, total) {
         const pct = remaining / total;
 
@@ -214,17 +204,15 @@ export default class AudioManager {
         this._tone(freq * 1.5, t + 0.08, 0.22, 0.18, "sine", 0.14);
     }
 
-    /** Reset milestone tracker — call at the start of each new round */
     resetMilestones() {
         this._milestonesHit.clear();
     }
 
-    /** Web Speech API — "India wins!" etc. High-priority, cancels anything queued. */
     speak(text) {
         if (!("speechSynthesis" in window)) return;
 
         speechSynthesis.cancel();
-        this._lastSpeakTime = Date.now();   // block commentary for 4 s after this
+        this._lastSpeakTime = Date.now();
 
         const utt   = new SpeechSynthesisUtterance(text);
         utt.rate    = 0.92;
@@ -241,20 +229,13 @@ export default class AudioManager {
         speechSynthesis.speak(utt);
     }
 
-    /**
-     * Low-priority ambient commentary — fires unless a high-priority speak()
-     * was called in the last 4 seconds. Slightly faster and quieter than the
-     * winner announcement voice.
-     */
     speakCommentary(text) {
         if (!("speechSynthesis" in window)) return;
 
-        // Guard against Chrome's sticky speechSynthesis.speaking bug by using
-        // a simple timestamp cooldown instead of the speaking flag.
         const now = Date.now();
         if (this._lastSpeakTime && now - this._lastSpeakTime < 4000) return;
 
-        speechSynthesis.cancel();   // clear any stale queue first
+        speechSynthesis.cancel();
 
         const utt   = new SpeechSynthesisUtterance(text);
         utt.rate    = 1.05;
